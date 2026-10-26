@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Flecha Secreta</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Flecha Secreta: o amigo secreto da Chácara São Sebastião">
+<meta name="theme-color" content="#21402f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flecha Secreta">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icone-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icone-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  html, body { margin: 0; height: 100%; background: #21402f; overflow: hidden; }
+  #app {
+    position: fixed; border: 0; background: #eef1ea;
+    top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: 0;
+    width: 100%; height: calc(100% - env(safe-area-inset-top, 0px));
+  }
+  #abertura {
+    position: fixed; inset: 0; display: grid; place-items: center; align-content: center; gap: 18px;
+    background: #21402f; color: #f3ead2; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    text-align: center; padding: 24px; transition: opacity .35s;
+  }
+  #abertura img { width: 96px; height: 96px; border-radius: 22px; }
+  #abertura h1 { margin: 0; font: 400 30px/1.1 Georgia, "Times New Roman", serif; color: #fff; }
+  #abertura .lema { opacity: .8; font-size: 14px; }
+  #abertura .ajuda { font-size: 13px; opacity: .85; max-width: 32ch; }
+  #abertura a { color: #e2b65e; }
+  .some { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="abertura">
+  <img src="icone-512.png" alt="">
+  <div><h1>Flecha Secreta</h1><div class="lema">o amigo secreto da Chácara São Sebastião</div></div>
+  <div class="ajuda" id="ajuda">Carregando…</div>
+</div>
+<iframe id="app" title="Flecha Secreta" allow="clipboard-write"></iframe>
+<script>
+/* ===================================================================
+ * Página de entrada do Flecha Secreta.
+ * Abre o aplicativo (Google Apps Script) em tela cheia e guarda a
+ * sessão de quem entrou, para não pedir a senha toda vez no iPhone.
+ * =================================================================== */
+var APP = 'https://script.google.com/macros/s/AKfycbzJHZpYgQO5Tcs9giku5K84TcUfQnSWhji07c8SQ9shcdlkrWD_bbzKgDFl1Yf-Zgg/exec';   // termina em /exec
+var CHAVE = 'flecha-dados';
+
+function ler() { try { return JSON.parse(localStorage.getItem(CHAVE) || '{}'); } catch (e) { return {}; } }
+function gravar(d) { try { localStorage.setItem(CHAVE, JSON.stringify(d)); } catch (e) {} }
+
+/* Repassa ao aplicativo os links que chegam por e-mail (?acao=...&t=...) e limpa o endereço */
+var busca = location.search;
+if (busca) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+var frame = document.getElementById('app');
+frame.src = APP + (busca || '');
+
+/* Conversa segura com o aplicativo: só aceita mensagens vindas do Google Apps Script */
+function doGoogle(origem) { try { return /\.googleusercontent\.com$/.test(new URL(origem).hostname); } catch (e) { return false; } }
+window.addEventListener('message', function (ev) {
+  if (!doGoogle(ev.origin) || !ev.data || !ev.data.flecha) return;
+  if (ev.data.flecha === 'pedir') {
+    ev.source.postMessage({ flecha: 'dados', dados: ler() }, ev.origin);
+    esconderAbertura();
+  } else if (ev.data.flecha === 'salvar' && typeof ev.data.chave === 'string' && /^flecha-/.test(ev.data.chave)) {
+    var d = ler();
+    if (ev.data.valor == null) delete d[ev.data.chave]; else d[ev.data.chave] = String(ev.data.valor).slice(0, 20000);
+    gravar(d);
+  }
+});
+
+var abertura = document.getElementById('abertura');
+function esconderAbertura() { abertura.classList.add('some'); }
+frame.addEventListener('load', function () { setTimeout(esconderAbertura, 1500); });
+setTimeout(function () {
+  document.getElementById('ajuda').innerHTML = 'Está demorando? Verifique a internet ou <a href="' + APP + '" target="_blank" rel="noopener">abra o aplicativo direto</a>.';
+}, 12000);
+</script>
+</body>
+</html>
