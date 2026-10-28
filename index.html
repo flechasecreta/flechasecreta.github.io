@@ -20,6 +20,9 @@
   body { margin: 0; height: 100%; overflow: hidden; background: linear-gradient(#21402f 0 50%, #fbfcf8 50% 100%); }
   html, body { height: 100%; }
   @media (prefers-color-scheme: dark) { html { background: #17221b; } body { background: linear-gradient(#16291e 0 50%, #17221b 50% 100%); } }
+  /* telas de entrada do app (todas verdes): base também verde, sem faixa clara */
+  body.capa, html.capa { background: #21402f; }
+  @media (prefers-color-scheme: dark) { body.capa, html.capa { background: #16291e; } }
   #app {
     position: fixed; border: 0; background: #eef1ea;
     top: env(safe-area-inset-top, 0px); bottom: env(safe-area-inset-bottom, 0px);
@@ -72,6 +75,9 @@ window.addEventListener('message', function (ev) {
   if (ev.data.flecha === 'pedir') {
     ev.source.postMessage({ flecha: 'dados', dados: ler() }, ev.origin);
     esconderAbertura();
+  } else if (ev.data.flecha === 'base') {
+    var capa = ev.data.modo === 'capa';
+    document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
   } else if (ev.data.flecha === 'salvar' && typeof ev.data.chave === 'string' && /^flecha-/.test(ev.data.chave)) {
     var d = ler();
     if (ev.data.valor == null) delete d[ev.data.chave]; else d[ev.data.chave] = String(ev.data.valor).slice(0, 20000);
