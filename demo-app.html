@@ -425,8 +425,9 @@ var Cripto = (function () {
     }
     return out;
   }
-  function chave() { return deHex(P.chaveSecreta()); }
-  function subchave(rotulo) { return hmac(chave(), utf8(rotulo)); }
+  var memoChave = null, memoSub = {};
+  function chave() { var k = P.chaveSecreta(); if (!memoChave || memoChave.k !== k) { memoChave = { k: k, b: deHex(k) }; memoSub = {}; } return memoChave.b; }
+  function subchave(rotulo) { var c = chave(); if (!memoSub[rotulo]) memoSub[rotulo] = hmac(c, utf8(rotulo)); return memoSub[rotulo]; }
   /* Cifra simétrica: fluxo HMAC-SHA256 (modo contador) + autenticação HMAC */
   function cifrar(obj) {
     var kE = subchave('cifra'), kM = subchave('mac');
@@ -1041,11 +1042,17 @@ var Core = (function () {
     return c.aAnon ? { titulo: 'Remetente anônimo', subtitulo: 'Alguém do grupo escreveu para você', icone: 'mascara', fotoDe: null }
       : { titulo: nomeDe(c.a), subtitulo: 'Conversa aberta', icone: 'balao', fotoDe: c.a };
   }
+  function ultimaMensagem(gid, cid) {
+    var linhas = T('Mensagens').all().filter(function (m) { return m.grupoId === gid && m.conversaId === cid; });
+    if (!linhas.length) return null;
+    var u = linhas.reduce(function (p, q) { return q.em > p.em ? q : p; });
+    var d = Cripto.decifrar(u.dados); d.id = u.id; d.em = u.em; return d;
+  }
   api.conversas = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
     exigirParticipante(x);
     return conversasDoGrupo(x.g.id).filter(function (c) { return c.a === u.email || c.b === u.email; }).map(function (c) {
-      var ds = descreverConversa(c, u.email), ms = mensagensDe(x.g.id, c.id), ult = ms[ms.length - 1];
+      var ds = descreverConversa(c, u.email), ult = ultimaMensagem(x.g.id, c.id);
       var fu = ds.fotoDe ? usuario(ds.fotoDe) : null;
       return { id: c.id, tipo: c.tipo, titulo: ds.titulo, subtitulo: ds.subtitulo, icone: ds.icone, foto: fu ? fu.foto : '',
         ultima: ult ? { texto: String(ult.texto).substr(0, 80), em: ult.em, minha: ult.lado === (c.a === u.email ? 'a' : 'b') } : null, ordem: c.tipo === 'amigo' ? (c.a === u.email ? 0 : 1) : 2 };
@@ -2200,7 +2207,7 @@ function telaPedidoGrupo(){
 
 function entrou(r){ S.token=r.token; lsSet('flecha-token', r.token); return iniciar(); }
 function sair(silencioso){
-  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null);
+  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); limparCache();
   if(t && !silencioso) chamar('sair',{token:t}).catch(function(){});
   telaLogin(silencioso? 'Sua sessão expirou. Entre novamente.' : '');
 }
@@ -2323,10 +2330,39 @@ function abrirGrupo(gid){
   app.innerHTML=carregando();
   return chamar('grupo',{grupoId:gid}).then(function(g){ S.g=g; if(['admin'].indexOf(S.aba)>=0 && !g.souAdmin) S.aba='amigo'; if(S.aba==='auditor' && !g.souAuditor) S.aba='amigo';
     if(g.suporte && ['amigo','conversas','mural'].indexOf(S.aba)>=0) S.aba='admin'; desenharGrupo();
-    if(g.boasVindas && g.boasVindas.length && !window.__SEM_BOAS_VINDAS__) mostrarBoasVindas(g.boasVindas); })
+    if(g.boasVindas && g.boasVindas.length && !window.__SEM_BOAS_VINDAS__) mostrarBoasVindas(g.boasVindas);
+    preCarregarAbas(); })
     .catch(function(e){ falha(e); S.gid=null; lsSet('flecha-grupo',null); telaGrupos(); });
 }
 function recarregarGrupo(){ return chamar('grupo',{grupoId:S.gid}).then(function(g){ S.g=g; desenharCabecalho(); }); }
+
+/* ---------- velocidade: cada aba abre na hora com o que já foi carregado e se atualiza em segundo plano ---------- */
+var CACHE={}, seqAba=0, mexeu=false, tNaoLidas=null;
+function limparCache(){ CACHE={}; }
+function usarCache(ch, nome, args, desenhar, podeAtualizar){
+  var seq=seqAba, em=CACHE[ch];
+  if(em) desenhar(em.d, true);
+  return chamar(nome, args).then(function(d){
+    var j=JSON.stringify(d), mudou=!em || em.j!==j; CACHE[ch]={d:d, j:j};
+    if(seq!==seqAba) return;
+    if(!em) return desenhar(d, false);
+    if(mudou && !mexeu && !document.querySelector('.modal-fundo') && (!podeAtualizar || podeAtualizar())) desenhar(d, false);
+  }).catch(function(e){ if(!em && seq===seqAba) falha(e); });
+}
+function preCarregar(ch, nome, args){
+  if(CACHE[ch]) return Promise.resolve(CACHE[ch].d);
+  return chamar(nome, args).then(function(d){ CACHE[ch]={d:d, j:JSON.stringify(d)}; return d; }).catch(function(){ return null; });
+}
+function preCarregarAbas(){
+  var gid=S.gid, g=S.g; if(!gid || !g || g.suporte) return;
+  setTimeout(function(){
+    if(S.gid!==gid) return;
+    preCarregar('amigo:'+gid,'meuAmigo',{grupoId:gid})
+      .then(function(){ return S.gid===gid && preCarregar('conv:'+gid,'conversas',{grupoId:gid}).then(marcarNaoLidas); })
+      .then(function(){ return S.gid===gid && preCarregar('mural:'+gid,'mural',{grupoId:gid}); });
+  }, 700);
+  if(!tNaoLidas) tNaoLidas=setInterval(function(){ if(!document.hidden && S.gid && $('#bol-conv') && S.aba!=='conversas') verificarNaoLidas(); }, 90000);
+}
 
 var ABAS = [
   {id:'amigo', rot:'Meu amigo', curto:'Amigo', ic:'alvo', se:function(g){return !g.suporte;}},
@@ -2341,6 +2377,7 @@ var ABAS = [
 function desenharGrupo(){
   app.innerHTML='<header class="topo" id="topo"></header><main class="wrap" id="conteudo"></main><nav class="abas" aria-label="Seções"><div class="wrap" id="abas"></div></nav>';
   desenharCabecalho(); desenharAbas(); mostrarAba(S.aba);
+  var ct=$('#conteudo'); if(ct) ct.addEventListener('input', function(){ mexeu=true; });
 }
 function desenharCabecalho(){
   var g=S.g, t=$('#topo'); if(!t) return;
@@ -2364,8 +2401,8 @@ function mostrarAba(id){
   S.aba=id; lsSet('flecha-aba', id); pararAtualizacao();
   $$('#abas [data-aba]').forEach(function(b){ b.setAttribute('aria-current', b.dataset.aba===id); });
   var c=$('#conteudo'); c.innerHTML=carregando(); window.scrollTo(0,0);
+  seqAba++; mexeu=false;
   ({amigo:abaAmigo, conversas:abaConversas, mural:abaMural, participantes:abaParticipantes, admin:abaAdmin, auditor:abaAuditor, perfil:abaPerfil, ajuda:abaAjuda}[id]||abaAmigo)(c);
-  verificarNaoLidas();
 }
 
 /* ---------- faixa de informações do grupo ---------- */
@@ -2383,8 +2420,9 @@ function faixaInfo(){
 }
 
 /* ---------- aba: meu amigo ---------- */
-function abaAmigo(c){
-  chamar('meuAmigo',{grupoId:S.gid}).then(function(a){
+function abaAmigo(c, fresco){
+  var ch='amigo:'+S.gid; if(fresco) delete CACHE[ch];
+  usarCache(ch,'meuAmigo',{grupoId:S.gid}, function(a){
     var g=S.g, h=faixaInfo();
     if(!a.sorteado){
       h+='<div class="bilhete"><div class="coberto">'+marca('#f3ead2')+'<h2 style="color:#fff">O sorteio ainda não foi feito</h2><div style="opacity:.85;max-width:36ch">Quando o administrador sortear, você recebe o nome do seu amigo secreto por e-mail e aqui.</div></div></div>';
@@ -2403,7 +2441,7 @@ function abaAmigo(c){
     var v=$('#bil-ver'); if(v){ v.onclick=function(){ $('#bil-c').hidden=true; $('#bil-r').hidden=false; }; $('#bil-esc').onclick=function(){ $('#bil-c').hidden=false; $('#bil-r').hidden=true; }; }
     $$('[data-ir]').forEach(function(b){ b.onclick=function(){ chamar('conversas',{grupoId:S.gid}).then(function(cs){ var alvo=cs.filter(function(k){ return k.tipo==='amigo' && (b.dataset.ir==='amigo'? k.ordem===0 : k.ordem===1); })[0]; if(alvo){ S.conv=alvo.id; mostrarAba('conversas'); } }).catch(falha); }; });
     $('#des-ok').onclick=function(){ var b=this; ocupado(b, function(){ return chamar('salvarDesejos',{grupoId:S.gid, desejos:$('#des').value}).then(function(){ S.g.meusDesejos=$('#des').value; aviso('Sugestões salvas.'); }); }); };
-  }).catch(falha);
+  }, function(){ var r=$('#bil-r'); return !(r && !r.hidden); });
 }
 
 /* ---------- compra de escolha (participante) ---------- */
@@ -2455,11 +2493,13 @@ function pararAtualizacao(){ clearInterval(tAtualiza); tAtualiza=null; }
 function vistos(){ try{ return JSON.parse(lsGet('flecha-vistos')||'{}'); }catch(e){ return {}; } }
 function marcarVisto(id, em){ var v=vistos(); v[id]=em||new Date().toISOString(); lsSet('flecha-vistos', JSON.stringify(v)); }
 function naoLida(k){ var v=vistos(); return k.ultima && !k.ultima.minha && (!v[k.id] || v[k.id] < k.ultima.em); }
-function verificarNaoLidas(){ if(!S.gid) return; chamar('conversas',{grupoId:S.gid}).then(function(cs){ var b=$('#bol-conv'); if(b) b.hidden=!cs.some(naoLida); }).catch(function(){}); }
+function marcarNaoLidas(cs){ var b=$('#bol-conv'); if(b && cs) b.hidden=!cs.some(naoLida); }
+function verificarNaoLidas(){ if(!S.gid) return; var gid=S.gid; chamar('conversas',{grupoId:gid}).then(function(cs){ CACHE['conv:'+gid]={d:cs, j:JSON.stringify(cs)}; marcarNaoLidas(cs); }).catch(function(){}); }
 
 function abaConversas(c){
   if(S.conv) return abrirConversa(c, S.conv);
-  chamar('conversas',{grupoId:S.gid}).then(function(cs){
+  usarCache('conv:'+S.gid,'conversas',{grupoId:S.gid}, function(cs){
+    marcarNaoLidas(cs);
     var h='<div class="secao"><div class="linha-acoes" style="justify-content:space-between"><h2>Conversas</h2><button class="btn peq" id="cv-nova">'+I.balao+'Nova mensagem</button></div>';
     if(!S.g.sorteado) h+='<div class="faixa info">Depois do sorteio aparecem aqui duas conversas especiais: com o seu amigo secreto (ele não sabe que é você) e com quem tirou você (você não sabe quem é).</div>';
     h+= cs.length? '<div class="lista">'+cs.map(function(k){
@@ -2470,7 +2510,7 @@ function abaConversas(c){
     c.innerHTML=h;
     $$('[data-c]').forEach(function(b){ b.onclick=function(){ S.conv=b.dataset.c; abrirConversa(c, S.conv); }; });
     $('#cv-nova').onclick=novaMensagem;
-  }).catch(falha);
+  });
 }
 function novaMensagem(){
   var atalhos=[{ic:'mural', t:'Todos', s:'Mensagem no mural do grupo', ir:'mural'}];
@@ -2556,8 +2596,9 @@ function abrirConversa(c, id){
 }
 
 /* ---------- aba: mural ---------- */
-function abaMural(c){
-  chamar('mural',{grupoId:S.gid}).then(function(ps){
+function abaMural(c, fresco){
+  var ch='mural:'+S.gid; if(fresco){ delete CACHE[ch]; mexeu=false; }
+  usarCache(ch,'mural',{grupoId:S.gid}, function(ps){
     var anon=false, resp=null, porId={};
     ps.forEach(function(p){ porId[p.id]=p; });
     c.innerHTML='<div class="secao"><h2>Mural do grupo</h2><div class="muted" style="margin-top:-6px">Mensagens para todos. Escolha se assina ou se fica anônimo. Toque em <b>Responder</b> para citar um recado. Seus recados podem ser editados até 10 minutos depois.</div>'+
@@ -2577,18 +2618,21 @@ function abaMural(c){
     }
     $$('[data-an]',c).forEach(function(b){ b.onclick=function(){ anon=b.dataset.an==='1'; $$('[data-an]',c).forEach(function(x){ x.setAttribute('aria-pressed', x===b); }); }; });
     $$('[data-resp]',c).forEach(function(b){ b.onclick=function(){ resp=b.dataset.resp; mostrarResp(); window.scrollTo({top:0, behavior:'smooth'}); setTimeout(function(){ $('#mu-t',c).focus(); }, 300); }; });
-    $('#mu-f',c).onsubmit=function(ev){ ev.preventDefault(); var t=$('#mu-t',c).value.trim(); if(!t) return; ocupado($('#mu-pub',c), function(){ return chamar('publicarMural',{grupoId:S.gid, texto:t, anonimo:anon, respostaA:resp||''}).then(function(){ abaMural(c); aviso(resp?'Resposta publicada.':'Publicado.'); }); }); };
+    $('#mu-f',c).onsubmit=function(ev){ ev.preventDefault(); var t=$('#mu-t',c).value.trim(); if(!t) return; ocupado($('#mu-pub',c), function(){ return chamar('publicarMural',{grupoId:S.gid, texto:t, anonimo:anon, respostaA:resp||''}).then(function(){ abaMural(c, true); aviso(resp?'Resposta publicada.':'Publicado.'); }); }); };
     autoCrescer($('#mu-t',c));
     $$('[data-ed]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.ed];
       if(Date.now()-new Date(p.em).getTime() > 10*60*1000) return aviso('O prazo para editar acabou (10 minutos).', true);
-      editarTexto('Editar recado', p.texto).then(function(v){ if(v==null || v===p.texto) return; chamar('editarMensagem',{grupoId:S.gid, conversaId:'MURAL', id:p.id, texto:v}).then(function(){ abaMural(c); aviso('Recado editado.'); }).catch(falha); }); }; });
-    $$('[data-del]',c).forEach(function(b){ b.onclick=function(){ confirmar('Apagar mensagem?','A mensagem sai do mural para todos.','Apagar').then(function(s){ if(s) chamar('apagarMural',{grupoId:S.gid,id:b.dataset.del}).then(function(){ abaMural(c); }).catch(falha); }); }; });
-  }).catch(falha);
+      editarTexto('Editar recado', p.texto).then(function(v){ if(v==null || v===p.texto) return; chamar('editarMensagem',{grupoId:S.gid, conversaId:'MURAL', id:p.id, texto:v}).then(function(){ abaMural(c, true); aviso('Recado editado.'); }).catch(falha); }); }; });
+    $$('[data-del]',c).forEach(function(b){ b.onclick=function(){ confirmar('Apagar mensagem?','A mensagem sai do mural para todos.','Apagar').then(function(s){ if(s) chamar('apagarMural',{grupoId:S.gid,id:b.dataset.del}).then(function(){ abaMural(c, true); }).catch(falha); }); }; });
+  }, function(){ var t=$('#mu-t'); return !t || (!t.value && document.activeElement!==t); });
 }
 
 /* ---------- aba: participantes ---------- */
 function abaParticipantes(c){
-  recarregarGrupo().then(function(){
+  var seq=seqAba, antes=JSON.stringify(S.g&&S.g.participantes);
+  if(S.g && S.g.participantes) desenhar();
+  recarregarGrupo().then(function(){ if(seq!==seqAba) return; if(JSON.stringify(S.g.participantes)!==antes && !document.querySelector('.modal-fundo')) desenhar(); }).catch(falha);
+  function desenhar(){
     var g=S.g;
     c.innerHTML=faixaInfo()+'<div class="secao"><h2>Participantes</h2><div class="muted" style="margin-top:-6px">Toque em alguém para ver o que gostaria de ganhar. '+(function(){ var n=g.participantes.filter(function(p){return p.desejos;}).length; return '<b>'+n+' de '+g.participantes.length+'</b> já deixaram sugestões.'; })()+'</div><div class="grade-part">'+
       g.participantes.map(function(p,i){ return '<button class="part '+(p.desejos?'com-desejo':'sem-desejo')+'" data-i="'+i+'">'+avatar(p.foto,p.nome,'g')+'<div class="nome">'+esc(p.nome)+(p.eu?' (você)':'')+'</div><div class="badges">'+(p.auditor?'<span class="chip ouro">auditor</span>':'')+(p.admin?'<span class="chip">admin</span>':'')+'</div><div class="tem-desejo">'+(p.desejos? I.presente+'tem sugestões' : 'sem sugestões ainda')+'</div></button>'; }).join('')+
@@ -2599,7 +2643,7 @@ function abaParticipantes(c){
         var bm=$('#pm-msg',m); if(bm) bm.onclick=function(){ fechar(); novaMensagem(); setTimeout(function(){ var s=$('#nm-para'); if(s) s.value=p.email||p.id; },60); };
       });
     }; });
-  }).catch(falha);
+  }
 }
 
 
@@ -2843,7 +2887,7 @@ function imprimir(html){
 }
 function blocoImprimir(){ return GAS? '' : '<div class="faixa info">Nesta demonstração a impressão está desativada. No aplicativo instalado, o botão abre a impressão em A4 (ou “Salvar como PDF”).</div>'; }
 function abaAuditor(c){
-  chamar('folhaAuditor',{grupoId:S.gid}).then(function(f){
+  usarCache('aud:'+S.gid,'folhaAuditor',{grupoId:S.gid}, function(f){
     var g=S.g;
     c.innerHTML='<div class="secao"><h2>Painel do auditor</h2><div class="muted" style="margin-top:-6px">No dia da revelação, use a folha impressa para anotar quem tirou quem, na ordem em que as pessoas revelam.</div>'+
       '<div class="linha-acoes"><button class="btn" id="au-imp" '+(GAS?'':'disabled')+'>'+I.prancheta+'Imprimir folha A4</button></div>'+blocoImprimir()+
@@ -2857,7 +2901,7 @@ function abaAuditor(c){
     $$('[data-tp]',c).forEach(function(b){ b.onclick=function(){ tp=b.dataset.tp; $$('[data-tp]',c).forEach(function(x){ x.setAttribute('aria-pressed', x===b); }); }; });
     var ok=$('#au-ok'); if(ok) ok.onclick=function(){ if(!tp) return aviso('Escolha uma opção.', true); ocupado(ok, function(){ return chamar('registrarTrapaca',{grupoId:S.gid, trapaca:tp==='sim', nota:$('#au-nota').value}).then(function(g2){ S.g=g2; aviso('Registrado.'); }); }); };
     var br=$('#au-res'); if(br) br.onclick=function(){ verResultado(); };
-  }).catch(falha);
+  });
 }
 
 /* ---------- resultado completo (a partir do dia seguinte) ---------- */
@@ -2879,7 +2923,13 @@ function verResultado(){
 /* ---------- aba: admin ---------- */
 function abaAdmin(c){
   S.subAdmin='resumo';
-  recarregarGrupo().then(function(){ desenharAdmin(c); }).catch(falha);
+  var seq=seqAba, antes=JSON.stringify(S.g);
+  if(S.g && S.g.participantes) desenharAdmin(c);
+  recarregarGrupo().then(function(){
+    if(seq!==seqAba) return;
+    var foco=document.activeElement && c.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if(JSON.stringify(S.g)!==antes && !mexeu && !foco && !document.querySelector('.modal-fundo')) desenharAdmin(c);
+  }).catch(falha);
 }
 function statusPessoa(p){
   if(p.ficticio) return '<span class="chip erro">e-mail fictício</span>';
