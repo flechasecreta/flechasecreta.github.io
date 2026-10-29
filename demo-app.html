@@ -332,13 +332,14 @@ var APP_LEMA = 'o amigo secreto da sua turma';
 var TABELAS = {
   Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira'],
   Grupos: ['id', 'nome', 'logo', 'valorMinimo', 'dataRevelacao', 'horaRevelacao', 'localNome', 'localEndereco', 'auditor', 'admins', 'sorteioEm', 'sorteioCodigo', 'trapaca', 'trapacaNota', 'criadoPor', 'criadoEm',
-    'compraAtiva', 'compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix', 'compraLimite', 'edicaoDe', 'telefoneLiberado'],
-  Membros: ['grupoId', 'email', 'desejos', 'confirmado', 'tokenConvite', 'conviteEnviadoEm', 'incluidoEm', 'sorteioEmail', 'sorteioRecebidoEm', 'tokenRecebido', 'boasVindas'],
+    'compraAtiva', 'compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix', 'compraLimite', 'edicaoDe', 'telefoneLiberado',
+    'abracoAtivo', 'abracoValor', 'abracoLimite', 'abracoOptOut'],
+  Membros: ['grupoId', 'email', 'desejos', 'confirmado', 'tokenConvite', 'conviteEnviadoEm', 'incluidoEm', 'sorteioEmail', 'sorteioRecebidoEm', 'tokenRecebido', 'boasVindas', 'semAbraco'],
   Sorteios: ['grupoId', 'dados', 'criadoEm'],
   Conversas: ['id', 'grupoId', 'tipo', 'dados', 'criadoEm'],
   Mensagens: ['id', 'grupoId', 'conversaId', 'dados', 'em'],
   Sessoes: ['tokenHash', 'email', 'expira'],
-  Compras: ['id', 'grupoId', 'comprador', 'escolha', 'status', 'pedidoEm', 'liberadoEm', 'escolhidoEm', 'encerradoEm', 'motivo', 'pagamento', 'devolvidoEm'],
+  Compras: ['id', 'grupoId', 'comprador', 'escolha', 'status', 'pedidoEm', 'liberadoEm', 'escolhidoEm', 'encerradoEm', 'motivo', 'pagamento', 'devolvidoEm', 'tipo'],
   ConvitesGrupo: ['token', 'nome', 'email', 'nomeGrupo', 'criadoPor', 'criadoEm', 'expira', 'usadoEm', 'grupoId'],
   PedidosGrupo: ['id', 'nome', 'email', 'telefone', 'nomeGrupo', 'participantes', 'mensagem', 'status', 'criadoEm', 'decididoEm', 'resposta'],
   Suporte: ['id', 'grupoId', 'de', 'autor', 'texto', 'em', 'lido', 'resp', 'editado'],
@@ -764,6 +765,7 @@ var Core = (function () {
       var p = {}, c = Cripto.decifrar(r.comprador), e = r.escolha ? Cripto.decifrar(r.escolha) : null;
       if (c && c.e === velho) p.comprador = Cripto.cifrar({ e: novo });
       if (e && e.e === velho) p.escolha = Cripto.cifrar({ e: novo });
+      if (e && (e.a === velho || e.b === velho)) p.escolha = Cripto.cifrar({ a: e.a === velho ? novo : e.a, b: e.b === velho ? novo : e.b });
       if (Object.keys(p).length) T('Compras').update(function (k) { return k.id === r.id; }, p);
     });
     if (P.trocarSuperadmin && ehSuper(velho)) P.trocarSuperadmin(velho, novo);
@@ -898,7 +900,9 @@ var Core = (function () {
   function encerrada(st) { return st === 'recusado' || st === 'cancelado'; }
   function todasCompras(gid) {
     return T('Compras').all().filter(function (c) { return c.grupoId === gid; }).map(function (c) {
-      return { id: c.id, comprador: (Cripto.decifrar(c.comprador) || {}).e, escolha: c.escolha ? (Cripto.decifrar(c.escolha) || {}).e : '', status: c.status, pedidoEm: c.pedidoEm, liberadoEm: c.liberadoEm, escolhidoEm: c.escolhidoEm,
+      var tipo = c.tipo === 'abraco' ? 'abraco' : 'escolha', esc2 = c.escolha ? (Cripto.decifrar(c.escolha) || {}) : {};
+      return { id: c.id, tipo: tipo, comprador: (Cripto.decifrar(c.comprador) || {}).e, escolha: tipo === 'escolha' ? (esc2.e || '') : '', par: tipo === 'abraco' && esc2.a ? { a: esc2.a, b: esc2.b } : null,
+        status: c.status, pedidoEm: c.pedidoEm, liberadoEm: c.liberadoEm, escolhidoEm: c.escolhidoEm,
         encerradoEm: c.encerradoEm || '', motivo: c.motivo || (c.status === 'cancelado' ? 'cancelado' : 'recusado'), pagamento: c.pagamento || '', devolvidoEm: c.devolvidoEm || '' };
     });
   }
@@ -911,12 +915,46 @@ var Core = (function () {
       P.enviarEmail({ para: e, assunto: APP_NOME + ': ' + assunto + ' (' + g.nome + ')', html: moldura(titulo, corpoHtml + botao(P.urlApp(), 'Abrir o aplicativo'), g) });
     });
   }
-  function limiteCompras(g) { var n = parseInt(g.compraLimite, 10); return n > 0 ? n : 3; }
-  function vagasUsadas(gid) { return compras(gid).filter(function (c) { return c.status === 'liberado' || c.status === 'escolhido'; }).length; }
-  function fixasDe(gid) { var f = {}; compras(gid).forEach(function (c) { if (c.status === 'escolhido' && c.escolha) f[c.comprador] = c.escolha; }); return f; }
+  /* Dois tipos de compra: 'escolha' (quem paga escolhe quem vai tirar) e 'abraco' (Abraço Garantido:
+     quem paga escolhe um par de OUTRAS duas pessoas, A tira B). */
+  function nomeTipo(t) { return t === 'abraco' ? 'Abraço Garantido' : 'compra de escolha'; }
+  function tipoAtivo(g, t) { return t === 'abraco' ? g.abracoAtivo === 'sim' : g.compraAtiva === 'sim'; }
+  function valorTipo(g, t) { return t === 'abraco' ? g.abracoValor : g.compraValor; }
+  function numero(v) { return parseFloat(String(v || '0').replace(/\./g, '').replace(',', '.')) || 0; }
+  function limiteCompras(g, t) { if (t === 'abraco') { var a = parseInt(g.abracoLimite, 10); return a > 0 ? a : 1; } var n = parseInt(g.compraLimite, 10); return n > 0 ? n : 3; }
+  function vagasUsadas(gid, t) { t = t || 'escolha'; return compras(gid).filter(function (c) { return c.tipo === t && (c.status === 'liberado' || c.status === 'escolhido'); }).length; }
+  function fixasDe(gid) {
+    var f = {};
+    compras(gid).forEach(function (c) {
+      if (c.status !== 'escolhido') return;
+      if (c.tipo === 'escolha' && c.escolha) f[c.comprador] = c.escolha;
+      if (c.tipo === 'abraco' && c.par) f[c.par.a] = c.par.b;
+    });
+    return f;
+  }
+  function semCirculo(f, de, para, n) {
+    // não pode fechar círculo antes da hora: seguindo os pares fixos a partir de "para" não se pode voltar a "de"
+    var atual = para, passos = 0;
+    while (f[atual] && passos++ < 1000) { atual = f[atual]; if (atual === de) return false; }
+    var g2 = {}; for (var k in f) g2[k] = f[k]; g2[de] = para;
+    return Object.keys(g2).length < n;
+  }
+  function abracoPossivel(g, comprador, a, b) {
+    var gid = g.id;
+    if (!a || !b || a === b || a === comprador || b === comprador) return false;
+    var ma = membro(gid, a), mb = membro(gid, b); if (!ma || !mb) return false;
+    if (g.abracoOptOut === 'sim' && (ma.semAbraco === 'sim' || mb.semAbraco === 'sim')) return false;
+    var f = fixasDe(gid);
+    if (f[a]) return false;                                                   // "A" já tem quem tirar
+    if (Object.keys(f).some(function (k) { return f[k] === b; })) return false; // "B" já será tirado por alguém
+    // "A" com compra de escolha em andamento escolherá por conta própria
+    if (compras(gid).some(function (c) { return c.tipo === 'escolha' && c.comprador === a && (c.status === 'pedido' || c.status === 'liberado'); })) return false;
+    return semCirculo(f, a, b, membros(gid).length);
+  }
   function escolhaPossivel(gid, comprador, alvo, n) {
     if (!alvo || alvo === comprador || !membro(gid, alvo)) return false;
     var f = fixasDe(gid);
+    if (f[comprador]) return false;
     if (Object.keys(f).some(function (k) { return f[k] === alvo; })) return false;
     // não pode fechar círculo: seguindo as escolhas a partir do escolhido não se pode voltar ao comprador
     var atual = alvo, passos = 0;
@@ -949,6 +987,7 @@ var Core = (function () {
       souAdmin: admin, souMembro: !!x.m, meusDesejos: x.m ? x.m.desejos : '', participantes: parts, hoje: hoje(),
       resultadoLiberado: liberadoResultado(g), diaRevelacao: diaRevelacaoChegou(g),
       suporte: !x.m && ehSuper(u.email), telefoneLiberado: g.telefoneLiberado === 'sim', souMestre: ehSuper(u.email), compraAtiva: g.compraAtiva === 'sim', compraValor: g.compraValor || '',
+      abracoAtivo: g.abracoAtivo === 'sim', abracoValor: g.abracoValor || '', abracoOptOut: g.abracoOptOut === 'sim', semAbraco: !!(x.m && x.m.semAbraco === 'sim'),
       compra: admin ? resumoCompras(g, u) : null,
       outrosAdmins: lista(g.admins).filter(function (e) { return e !== u.email; }).length,
       sorteioTravado: sorteioTravado(g),
@@ -979,24 +1018,30 @@ var Core = (function () {
   };
 
   /* Resumo sem nomes (só quantidades), para o resultado oficial */
+  function contarCompras(g) {
+    var cs = compras(g.id), r = {};
+    ['escolha', 'abraco'].forEach(function (t) {
+      var d = cs.filter(function (c) { return c.tipo === t; });
+      r[t] = { feitas: d.filter(function (c) { return c.status === 'escolhido'; }).length, pagas: d.filter(function (c) { return c.status === 'liberado' || c.status === 'escolhido'; }).length };
+    });
+    var total = r.escolha.pagas * numero(g.compraValor) + r.abraco.pagas * numero(g.abracoValor);
+    return { feitas: r.escolha.feitas, pagas: r.escolha.pagas, abracos: r.abraco.feitas, abracosPagos: r.abraco.pagas, arrecadado: total ? total.toFixed(2).replace('.', ',') : '' };
+  }
   function totaisCompras(g) {
     var cs = compras(g.id);
-    if (g.compraAtiva !== 'sim' && !cs.length) return null;
-    var feitas = cs.filter(function (c) { return c.status === 'escolhido'; }).length;
-    var pagas = cs.filter(function (c) { return c.status === 'liberado' || c.status === 'escolhido'; }).length;
-    var v = parseFloat(String(g.compraValor || '0').replace(/\./g, '').replace(',', '.')) || 0;
-    return { feitas: feitas, pagas: pagas, valor: g.compraValor || '', arrecadado: v ? (v * pagas).toFixed(2).replace('.', ',') : '' };
+    if (g.compraAtiva !== 'sim' && g.abracoAtivo !== 'sim' && !cs.length) return null;
+    var t = contarCompras(g); t.valor = g.compraValor || ''; t.valorAbraco = g.abracoValor || ''; t.temAbraco = g.abracoAtivo === 'sim' || t.abracosPagos > 0;
+    return t;
   }
   function resumoCompras(g, u) {
-    var cs = compras(g.id), r = { ativa: g.compraAtiva === 'sim', valor: g.compraValor || '', banco: g.compraBanco || '', agencia: g.compraAgencia || '', conta: g.compraConta || '', titular: g.compraTitular || '', pix: g.compraPix || '', limite: limiteCompras(g) };
+    var cs = compras(g.id), r = { ativa: g.compraAtiva === 'sim' || g.abracoAtivo === 'sim', escolhaAtiva: g.compraAtiva === 'sim', valor: g.compraValor || '', banco: g.compraBanco || '', agencia: g.compraAgencia || '', conta: g.compraConta || '', titular: g.compraTitular || '', pix: g.compraPix || '', limite: limiteCompras(g) };
     r.aguardando = cs.filter(function (c) { return c.status === 'pedido' || c.status === 'liberado'; }).length;
     if (ehSuper(u.email)) { var tc = todasCompras(g.id); r.historico = tc.length; r.devolucoes = tc.filter(devolucaoPendente).length; }
     // quantidade de escolhas: visível ao mestre sempre e aos demais administradores a partir do dia da revelação
+    r.abracoAtiva = g.abracoAtivo === 'sim'; r.abracoValor = g.abracoValor || ''; r.abracoLimite = limiteCompras(g, 'abraco'); r.abracoOptOut = g.abracoOptOut === 'sim';
     if (ehSuper(u.email) || diaRevelacaoChegou(g)) {
-      r.feitas = cs.filter(function (c) { return c.status === 'escolhido'; }).length;
-      r.pagas = cs.filter(function (c) { return c.status === 'liberado' || c.status === 'escolhido'; }).length;
-      var v = parseFloat(String(g.compraValor || '0').replace(/\./g, '').replace(',', '.')) || 0;
-      r.arrecadado = v ? (v * r.pagas).toFixed(2).replace('.', ',') : '';
+      var t = contarCompras(g);
+      r.feitas = t.feitas; r.pagas = t.pagas; r.abracos = t.abracos; r.abracosPagos = t.abracosPagos; r.arrecadado = t.arrecadado;
     }
     return r;
   }
@@ -1453,11 +1498,21 @@ var Core = (function () {
     ['compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix'].forEach(function (k) { if (d[k] != null) p[k] = String(d[k]).trim().substr(0, 200); });
     if (d.telefoneLiberado != null) p.telefoneLiberado = d.telefoneLiberado ? 'sim' : '';
     if (d.compraLimite != null) { var lim = parseInt(d.compraLimite, 10); p.compraLimite = lim > 0 ? String(lim) : '3'; }
+    if (d.abracoValor != null) p.abracoValor = String(d.abracoValor).trim().substr(0, 30);
+    if (d.abracoLimite != null) { var la = parseInt(d.abracoLimite, 10); p.abracoLimite = la > 0 ? String(la) : '1'; }
+    if (d.abracoOptOut != null) p.abracoOptOut = d.abracoOptOut ? 'sim' : '';
+    if (d.abracoAtivo != null) {
+      if (d.abracoAtivo && x.g.sorteioEm) erro('O sorteio já foi feito; não é possível ativar o Abraço Garantido agora.');
+      if (d.abracoAtivo && !String((d.compraPix != null ? d.compraPix : x.g.compraPix) || '').trim()) erro('Informe a chave PIX para ativar o Abraço Garantido.');
+      if (d.abracoAtivo && !String((d.abracoValor != null ? d.abracoValor : x.g.abracoValor) || '').trim()) erro('Informe o valor do Abraço Garantido.');
+      if (!d.abracoAtivo && compras(x.g.id).some(function (c) { return c.tipo === 'abraco'; })) erro('Já existem pedidos de Abraço Garantido. Peça ao administrador geral para concluí-los ou recusá-los antes de desativar.');
+      p.abracoAtivo = d.abracoAtivo ? 'sim' : '';
+    }
     if (d.compraAtiva != null) {
       if (d.compraAtiva && x.g.sorteioEm) erro('O sorteio já foi feito; não é possível ativar a compra de escolha agora.');
       if (d.compraAtiva && !String((d.compraPix != null ? d.compraPix : x.g.compraPix) || '').trim()) erro('Informe a chave PIX para ativar a compra de escolha.');
       if (d.compraAtiva && !String((d.compraValor != null ? d.compraValor : x.g.compraValor) || '').trim()) erro('Informe o valor da escolha.');
-      if (!d.compraAtiva && compras(x.g.id).length) erro('Já existem pedidos de escolha. Peça ao administrador geral para concluí-los ou recusá-los antes de desativar.');
+      if (!d.compraAtiva && compras(x.g.id).some(function (c) { return c.tipo === 'escolha'; })) erro('Já existem pedidos de escolha. Peça ao administrador geral para concluí-los ou recusá-los antes de desativar.');
       p.compraAtiva = d.compraAtiva ? 'sim' : '';
     }
     if (d.auditor != null) {
@@ -1539,6 +1594,7 @@ var Core = (function () {
     compras(g.id).forEach(function (c) {
       if (c.comprador === alvo) T('Compras').update(function (k) { return k.id === c.id; }, { status: 'recusado', motivo: 'removido', encerradoEm: agora() });
       else if (c.escolha === alvo) T('Compras').update(function (k) { return k.id === c.id; }, { escolha: '', status: 'liberado', escolhidoEm: '' });
+      else if (c.par && (c.par.a === alvo || c.par.b === alvo)) T('Compras').update(function (k) { return k.id === c.id; }, { escolha: '', status: 'liberado', escolhidoEm: '' });
     });
     var p = { admins: lista(g.admins).filter(function (e) { return e !== alvo; }).join(',') };
     if (norm(g.auditor) === alvo) p.auditor = '';
@@ -1575,7 +1631,7 @@ var Core = (function () {
     if (pend.length && !a.forcar) erro('Há ' + pend.length + ' participante(s) que ainda não confirmaram o e-mail.');
     if (ms.some(function (m) { return ficticio(m.email); })) erro('Há participantes com e-mail fictício (@example.com). Corrija antes de sortear.');
     var abertas = compras(g.id).filter(function (c) { return c.status === 'pedido' || c.status === 'liberado'; }).length;
-    if (abertas) erro('Há ' + abertas + ' compra(s) de escolha ainda em andamento. O sorteio só pode ser feito depois que forem concluídas (ou recusadas pelo administrador geral).');
+    if (abertas) erro('Há ' + abertas + ' compra(s) de escolha ou Abraço Garantido ainda em andamento. O sorteio só pode ser feito depois que forem concluídas (ou recusadas pelo administrador geral).');
     if (g.sorteioEm) { if (!a.refazer) erro('O sorteio já foi realizado.'); anularSorteio(g, 'refeito pelo administrador', u.email); }
 
     var fixas = fixasDe(g.id);
@@ -1644,43 +1700,86 @@ var Core = (function () {
   /* =================== COMPRA DE ESCOLHA =================== */
   api.compraInfo = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), g = x.g;
-    if (g.compraAtiva !== 'sim') return { ativa: false };
-    var minha = compras(g.id).filter(function (c) { return c.comprador === u.email; })[0] || null;
-    var r = { ativa: true, sorteado: !!g.sorteioEm, valor: moeda(g.compraValor), banco: g.compraBanco || '', agencia: g.compraAgencia || '', conta: g.compraConta || '', titular: g.compraTitular || '', pix: g.compraPix || '',
-      status: minha ? minha.status : '', disponivel: !g.sorteioEm && vagasUsadas(g.id) < limiteCompras(g) };
+    if (g.compraAtiva !== 'sim' && g.abracoAtivo !== 'sim') return { ativa: false };
+    var minha = compras(g.id).filter(function (c) { return c.tipo === 'escolha' && c.comprador === u.email; })[0] || null;
+    var fx = fixasDe(g.id);
+    var r = { ativa: g.compraAtiva === 'sim', sorteado: !!g.sorteioEm, valor: moeda(g.compraValor), banco: g.compraBanco || '', agencia: g.compraAgencia || '', conta: g.compraConta || '', titular: g.compraTitular || '', pix: g.compraPix || '',
+      status: minha ? minha.status : '', disponivel: !g.sorteioEm && vagasUsadas(g.id) < limiteCompras(g) && !fx[u.email] };
+    if (g.abracoAtivo === 'sim') r.abraco = infoAbraco(g, u);
     if (minha && minha.escolha) { var pu = usuario(minha.escolha) || {}; r.escolhido = { nome: pu.nome || '', foto: pu.foto || '' }; }
     if (!minha) {
-      var ant = todasCompras(g.id).filter(function (c) { return c.comprador === u.email && encerrada(c.status); }).sort(function (p, q) { return (p.encerradoEm || p.pedidoEm) < (q.encerradoEm || q.pedidoEm) ? 1 : -1; })[0];
+      var ant = todasCompras(g.id).filter(function (c) { return c.tipo === 'escolha' && c.comprador === u.email && encerrada(c.status); }).sort(function (p, q) { return (p.encerradoEm || p.pedidoEm) < (q.encerradoEm || q.pedidoEm) ? 1 : -1; })[0];
       if (ant) r.anterior = { motivo: ant.motivo, devolvido: !!ant.devolvidoEm, devolvidoEm: ant.devolvidoEm, semPagamento: ant.pagamento === 'nao-recebido' };
     }
     if (minha && minha.status === 'liberado') r.opcoes = membros(g.id).filter(function (m) { return m.email !== u.email; }).map(function (m) { var pu = usuario(m.email) || {}; return { id: Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12), nome: pu.nome || '' }; }).sort(function (p, q) { return p.nome.localeCompare(q.nome, 'pt-BR'); });
     return r;
   };
 
+  function opcoesPessoas(g, excluir) {
+    return membros(g.id).filter(function (m) { return excluir.indexOf(m.email) < 0 && !(g.abracoOptOut === 'sim' && m.semAbraco === 'sim'); })
+      .map(function (m) { var pu = usuario(m.email) || {}; return { id: Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12), nome: pu.nome || '' }; })
+      .sort(function (p, q) { return p.nome.localeCompare(q.nome, 'pt-BR'); });
+  }
+  function emailPorId(g, id) { var e = null; membros(g.id).forEach(function (m) { if (Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12) === id) e = m.email; }); return e; }
+  function infoAbraco(g, u) {
+    var minha = compras(g.id).filter(function (c) { return c.tipo === 'abraco' && c.comprador === u.email; })[0] || null;
+    var r = { ativo: true, valor: moeda(g.abracoValor), status: minha ? minha.status : '', disponivel: !g.sorteioEm && vagasUsadas(g.id, 'abraco') < limiteCompras(g, 'abraco') };
+    if (minha && minha.par) r.par = { a: nomeDe(minha.par.a), b: nomeDe(minha.par.b) };
+    if (minha && minha.status === 'liberado') r.opcoes = opcoesPessoas(g, [u.email]);
+    if (!minha) {
+      var ant = todasCompras(g.id).filter(function (c) { return c.tipo === 'abraco' && c.comprador === u.email && encerrada(c.status); }).sort(function (p, q) { return (p.encerradoEm || p.pedidoEm) < (q.encerradoEm || q.pedidoEm) ? 1 : -1; })[0];
+      if (ant) r.anterior = { motivo: ant.motivo, devolvido: !!ant.devolvidoEm, devolvidoEm: ant.devolvidoEm, semPagamento: ant.pagamento === 'nao-recebido' };
+    }
+    return r;
+  }
+  api.escolherAbraco = function (a) {
+    var u = sessao(a.token), x = exigirMembro(u, a.grupoId), g = x.g;
+    if (g.sorteioEm) erro('O sorteio já foi feito.');
+    var c = compras(g.id).filter(function (k) { return k.tipo === 'abraco' && k.comprador === u.email; })[0];
+    if (!c || c.status !== 'liberado') erro('Seu Abraço Garantido não está liberado.');
+    var pa = emailPorId(g, a.a), pb = emailPorId(g, a.b);
+    if (!pa || !pb) erro('Escolha as duas pessoas.');
+    if (pa === pb) erro('Escolha duas pessoas diferentes.');
+    if (pa === u.email || pb === u.email) erro('Você não pode fazer parte do par que escolheu.');
+    if (!abracoPossivel(g, u.email, pa, pb)) erro('Esse par não está disponível. Tente outra combinação.');
+    T('Compras').update(function (k) { return k.id === c.id; }, { escolha: Cripto.cifrar({ a: pa, b: pb }), status: 'escolhido', escolhidoEm: agora() });
+    log(u.email, 'escolheu-abraco', g.id);
+    return api.compraInfo(a);
+  };
+  api.preferenciaAbraco = function (a) {
+    var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
+    if (!x.m) erro('Você não participa deste grupo.');
+    T('Membros').update(function (m) { return m.grupoId === x.g.id && m.email === u.email; }, { semAbraco: a.sem ? 'sim' : '' });
+    return api.grupo(a);
+  };
+
   api.pedirCompra = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), g = x.g;
     if (!x.m) erro('Você não participa deste grupo.');
-    if (g.compraAtiva !== 'sim') erro('A compra de escolha não está ativa neste grupo.');
+    var tipo = a.tipo === 'abraco' ? 'abraco' : 'escolha', nt = nomeTipo(tipo);
+    if (!tipoAtivo(g, tipo)) erro(tipo === 'abraco' ? 'O Abraço Garantido não está ativo neste grupo.' : 'A compra de escolha não está ativa neste grupo.');
     if (g.sorteioEm) erro('O sorteio já foi feito.');
-    if (compras(g.id).some(function (c) { return c.comprador === u.email; })) erro('Você já fez um pedido.');
-    if (vagasUsadas(g.id) >= limiteCompras(g)) erro('Escolha indisponível: as vagas deste grupo já foram preenchidas.');
-    T('Compras').insert({ id: Cripto.token().substr(0, 16), grupoId: g.id, comprador: Cripto.cifrar({ e: u.email }), escolha: '', status: 'pedido', pedidoEm: agora(), liberadoEm: '', escolhidoEm: '' });
+    if (compras(g.id).some(function (c) { return c.tipo === tipo && c.comprador === u.email; })) erro('Você já fez um pedido.');
+    if (vagasUsadas(g.id, tipo) >= limiteCompras(g, tipo)) erro((tipo === 'abraco' ? 'Abraço Garantido' : 'Escolha') + ' indisponível: as vagas deste grupo já foram preenchidas.');
+    if (tipo === 'escolha' && fixasDe(g.id)[u.email]) erro('Escolha indisponível: as vagas deste grupo já foram preenchidas.');
+    T('Compras').insert({ id: Cripto.token().substr(0, 16), grupoId: g.id, comprador: Cripto.cifrar({ e: u.email }), escolha: '', status: 'pedido', pedidoEm: agora(), liberadoEm: '', escolhidoEm: '', tipo: tipo === 'abraco' ? 'abraco' : '' });
     P.superadmins().map(norm).filter(function (e) { return e && e !== u.email; }).forEach(function (e) {
-      avisar(e, 'Novo pedido de escolha', 'Grupo ' + g.nome + ': confira o PIX e libere na aba Admin.');
-      P.enviarEmail({ para: e, assunto: APP_NOME + ': novo pedido de escolha (' + g.nome + ')', html: moldura('Novo pedido de escolha', '<p><b>' + esc(u.nome) + '</b> informou que pagou a compra de escolha no grupo <b>' + esc(g.nome) + '</b>.</p><p>Confira o PIX e, se estiver tudo certo, libere na aba Admin do aplicativo.</p>' + botao(P.urlApp(), 'Abrir o aplicativo'), g) });
+      avisar(e, 'Novo pedido: ' + nt, 'Grupo ' + g.nome + ': confira o PIX (' + moeda(valorTipo(g, tipo)) + ') e libere na aba Admin.');
+      P.enviarEmail({ para: e, assunto: APP_NOME + ': novo pedido de ' + nt + ' (' + g.nome + ')', html: moldura('Novo pedido: ' + nt, '<p><b>' + esc(u.nome) + '</b> informou que pagou ' + (tipo === 'abraco' ? 'um <b>Abraço Garantido</b>' : 'a compra de escolha') + ' (' + esc(moeda(valorTipo(g, tipo))) + ') no grupo <b>' + esc(g.nome) + '</b>.</p><p>Confira o PIX e, se estiver tudo certo, libere na aba Admin do aplicativo.</p>' + botao(P.urlApp(), 'Abrir o aplicativo'), g) });
     });
-    log(u.email, 'pediu-escolha', g.id);
+    log(u.email, 'pediu-' + tipo, g.id);
     return api.compraInfo(a);
   };
 
   api.cancelarPedido = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
-    var c = compras(x.g.id).filter(function (k) { return k.comprador === u.email && k.status === 'pedido'; })[0];
+    var tipo = a.tipo === 'abraco' ? 'abraco' : 'escolha', nt = nomeTipo(tipo);
+    var c = compras(x.g.id).filter(function (k) { return k.tipo === tipo && k.comprador === u.email && k.status === 'pedido'; })[0];
     if (!c) erro('Não há pedido aguardando para cancelar.');
     T('Compras').update(function (k) { return k.id === c.id; }, { status: 'cancelado', motivo: 'cancelado', encerradoEm: agora() });
-    avisarMestres('Pedido de escolha cancelado', 'pedido de escolha cancelado',
-      '<p><b>' + esc(u.nome) + '</b> cancelou o pedido de compra de escolha no grupo <b>' + esc(x.g.nome) + '</b>, depois de avisar que tinha feito o PIX.</p>' +
-      '<p><b>Confira no seu banco se o pagamento entrou.</b> Se entrou, <b>devolva o valor</b> (' + esc(moeda(x.g.compraValor)) + ') e registre a devolução na aba Admin do grupo, em Compra de escolha. ' + esc(u.nome) + ' será avisado(a). Se o pagamento não entrou, marque “Não houve pagamento”.</p>', x.g, u.email);
+    avisarMestres('Pedido cancelado: ' + nt, 'pedido de ' + nt + ' cancelado',
+      '<p><b>' + esc(u.nome) + '</b> cancelou o pedido de ' + nt + ' no grupo <b>' + esc(x.g.nome) + '</b>, depois de avisar que tinha feito o PIX.</p>' +
+      '<p><b>Confira no seu banco se o pagamento entrou.</b> Se entrou, <b>devolva o valor</b> (' + esc(moeda(valorTipo(x.g, tipo))) + ') e registre a devolução na aba Admin do grupo, em Compras. ' + esc(u.nome) + ' será avisado(a). Se o pagamento não entrou, marque “Não houve pagamento”.</p>', x.g, u.email);
     log(u.email, 'cancelou-escolha', x.g.id);
     return api.compraInfo(a);
   };
@@ -1689,7 +1788,7 @@ var Core = (function () {
   api.pedidosCompra = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
     if (!ehSuper(u.email)) erro('Apenas o administrador geral.');
-    return todasCompras(x.g.id).map(function (c) { return { id: c.id, nome: nomeDe(c.comprador), status: c.status, pedidoEm: c.pedidoEm, liberadoEm: c.liberadoEm,
+    return todasCompras(x.g.id).map(function (c) { return { id: c.id, tipo: c.tipo === 'abraco' ? 'abraco' : 'compra', nome: nomeDe(c.comprador), status: c.status, pedidoEm: c.pedidoEm, liberadoEm: c.liberadoEm,
         encerradoEm: c.encerradoEm, motivo: c.motivo, pagamento: c.pagamento, devolvidoEm: c.devolvidoEm, encerrada: encerrada(c.status), pendente: devolucaoPendente(c) }; })
       .sort(function (p, q) { return p.pedidoEm < q.pedidoEm ? -1 : 1; });
   };
@@ -1702,13 +1801,18 @@ var Core = (function () {
     if (g.sorteioEm) erro('O sorteio já foi feito.');
     if (a.aprovar) {
       if (c.status !== 'pedido') erro('Este pedido já foi liberado.');
-      if (vagasUsadas(g.id) >= limiteCompras(g)) erro('O limite de ' + limiteCompras(g) + ' escolhas já foi atingido. Recuse este pedido e devolva o valor.');
+      if (vagasUsadas(g.id, c.tipo) >= limiteCompras(g, c.tipo)) erro('O limite de ' + limiteCompras(g, c.tipo) + (c.tipo === 'abraco' ? ' Abraço(s) Garantido(s)' : ' escolhas') + ' já foi atingido. Recuse este pedido e devolva o valor.');
       T('Compras').update(function (k) { return k.id === c.id; }, { status: 'liberado', liberadoEm: agora() });
-      P.enviarEmail({ para: c.comprador, assunto: APP_NOME + ': sua escolha foi liberada', html: moldura('Pagamento confirmado!', '<p>Olá, <b>' + esc(nomeDe(c.comprador)) + '</b>!</p><p>Seu pagamento foi confirmado. Entre no aplicativo, na aba <b>Meu amigo</b>, e escolha quem você quer tirar no grupo <b>' + esc(g.nome) + '</b>.</p>' + botao(P.urlApp(), 'Fazer minha escolha'), g) });
-      avisar(c.comprador, 'Sua escolha foi liberada!', 'Pagamento confirmado. Abra o Flecha Secreta e escolha quem você quer tirar.');
+      if (c.tipo === 'abraco') {
+        P.enviarEmail({ para: c.comprador, assunto: APP_NOME + ': seu Abraço Garantido foi liberado', html: moldura('Pagamento confirmado!', '<p>Olá, <b>' + esc(nomeDe(c.comprador)) + '</b>!</p><p>Seu pagamento foi confirmado. Entre no aplicativo, na aba <b>Meu amigo</b>, e escolha o par do seu <b>Abraço Garantido</b> no grupo <b>' + esc(g.nome) + '</b>.</p>' + botao(P.urlApp(), 'Escolher o par'), g) });
+        avisar(c.comprador, 'Seu Abraço Garantido foi liberado! 🤗', 'Pagamento confirmado. Abra o Flecha Secreta e escolha o par.');
+      } else {
+        P.enviarEmail({ para: c.comprador, assunto: APP_NOME + ': sua escolha foi liberada', html: moldura('Pagamento confirmado!', '<p>Olá, <b>' + esc(nomeDe(c.comprador)) + '</b>!</p><p>Seu pagamento foi confirmado. Entre no aplicativo, na aba <b>Meu amigo</b>, e escolha quem você quer tirar no grupo <b>' + esc(g.nome) + '</b>.</p>' + botao(P.urlApp(), 'Fazer minha escolha'), g) });
+        avisar(c.comprador, 'Sua escolha foi liberada!', 'Pagamento confirmado. Abra o Flecha Secreta e escolha quem você quer tirar.');
+      }
       log(u.email, 'liberou-escolha', g.id);
     } else {
-      if (c.status === 'escolhido') erro('Esta escolha já foi feita e não pode mais ser recusada.');
+      if (c.status === 'escolhido') erro(c.tipo === 'abraco' ? 'Este par já foi escolhido e não pode mais ser recusado.' : 'Esta escolha já foi feita e não pode mais ser recusada.');
       // pagamento já confirmado (liberado): a devolução é certa; pedido ainda não conferido: falta verificar
       T('Compras').update(function (k) { return k.id === c.id; }, { status: 'recusado', motivo: 'recusado', encerradoEm: agora(), pagamento: '' });
       avisarRecusa(g, c);
@@ -1718,11 +1822,11 @@ var Core = (function () {
   };
 
   function avisarRecusa(g, c) {
-    var nome = nomeDe(c.comprador);
-    P.enviarEmail({ para: c.comprador, assunto: APP_NOME + ': seu pedido de compra de escolha', html: moldura('Pedido não atendido',
-      '<p>Olá, <b>' + esc(nome) + '</b>!</p><p>Infelizmente, o seu pedido de compra de escolha no grupo <b>' + esc(g.nome) + '</b> não pôde ser atendido.</p>' +
+    var nome = nomeDe(c.comprador), nt = nomeTipo(c.tipo);
+    P.enviarEmail({ para: c.comprador, assunto: APP_NOME + ': seu pedido de ' + nt, html: moldura('Pedido não atendido',
+      '<p>Olá, <b>' + esc(nome) + '</b>!</p><p>Infelizmente, o seu pedido de ' + nt + ' no grupo <b>' + esc(g.nome) + '</b> não pôde ser atendido.</p>' +
       '<p><b>Fique tranquilo(a):</b> sendo comprovado o seu pagamento, o valor será devolvido para você. Você receberá um aviso quando a devolução for feita.</p>', g) });
-    avisar(c.comprador, 'Pedido de compra de escolha não atendido', 'Seu pedido no grupo ' + g.nome + ' não pôde ser atendido. Sendo comprovado o pagamento, o valor será devolvido para você.');
+    avisar(c.comprador, 'Pedido de ' + nt + ' não atendido', 'Seu pedido no grupo ' + g.nome + ' não pôde ser atendido. Sendo comprovado o pagamento, o valor será devolvido para você.');
   }
   /* Administrador geral registra o resultado da conferência de uma compra encerrada */
   api.registrarDevolucao = function (a) {
@@ -1734,10 +1838,10 @@ var Core = (function () {
     if (c.pagamento) erro('Este pedido já foi concluído.');
     if (a.situacao === 'devolvido') {
       T('Compras').update(function (k) { return k.id === c.id; }, { pagamento: 'devolvido', devolvidoEm: agora() });
-      var nome = nomeDe(c.comprador), valor = moeda(g.compraValor);
+      var nome = nomeDe(c.comprador), valor = moeda(valorTipo(g, c.tipo));
       P.enviarEmail({ para: c.comprador, assunto: APP_NOME + ': devolução realizada', html: moldura('Devolução realizada',
-        '<p>Olá, <b>' + esc(nome) + '</b>!</p><p>O valor' + (valor ? ' de <b>' + esc(valor) + '</b>' : '') + ' que você pagou pela compra de escolha no grupo <b>' + esc(g.nome) + '</b> foi <b>devolvido</b> para você.</p><p>Confira na sua conta. Qualquer dúvida, fale com os administradores pelo aplicativo.</p>', g) });
-      avisar(c.comprador, 'Devolução realizada 💸', 'O valor da sua compra de escolha no grupo ' + g.nome + ' foi devolvido. Confira na sua conta.');
+        '<p>Olá, <b>' + esc(nome) + '</b>!</p><p>O valor' + (valor ? ' de <b>' + esc(valor) + '</b>' : '') + ' que você pagou pelo seu pedido de ' + nomeTipo(c.tipo) + ' no grupo <b>' + esc(g.nome) + '</b> foi <b>devolvido</b> para você.</p><p>Confira na sua conta. Qualquer dúvida, fale com os administradores pelo aplicativo.</p>', g) });
+      avisar(c.comprador, 'Devolução realizada 💸', 'O valor do seu pedido de ' + nomeTipo(c.tipo) + ' no grupo ' + g.nome + ' foi devolvido. Confira na sua conta.');
       log(u.email, 'devolveu-escolha', g.id);
     } else if (a.situacao === 'sem-pagamento') {
       T('Compras').update(function (k) { return k.id === c.id; }, { pagamento: 'nao-recebido' });
@@ -1749,7 +1853,7 @@ var Core = (function () {
   api.escolher = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), g = x.g;
     if (g.sorteioEm) erro('O sorteio já foi feito.');
-    var c = compras(g.id).filter(function (k) { return k.comprador === u.email; })[0];
+    var c = compras(g.id).filter(function (k) { return k.tipo === 'escolha' && k.comprador === u.email; })[0];
     if (!c || c.status !== 'liberado') erro('Sua escolha não está liberada.');
     var alvo = null;
     membros(g.id).forEach(function (m) { if (Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12) === a.para) alvo = m.email; });
@@ -1771,7 +1875,8 @@ var Core = (function () {
     T('Grupos').insert({ id: id, nome: nome, logo: g.logo, valorMinimo: g.valorMinimo, dataRevelacao: ano + String(g.dataRevelacao).substr(4), horaRevelacao: g.horaRevelacao,
       localNome: g.localNome, localEndereco: g.localEndereco, auditor: g.auditor, admins: g.admins, sorteioEm: '', sorteioCodigo: '', trapaca: '', trapacaNota: '',
       criadoPor: u.email, criadoEm: agoraIso, compraAtiva: '', compraValor: g.compraValor, compraBanco: g.compraBanco, compraAgencia: g.compraAgencia, compraConta: g.compraConta,
-      compraTitular: g.compraTitular, compraPix: g.compraPix, compraLimite: g.compraLimite, edicaoDe: g.id });
+      compraTitular: g.compraTitular, compraPix: g.compraPix, compraLimite: g.compraLimite, edicaoDe: g.id,
+      abracoAtivo: '', abracoValor: g.abracoValor, abracoLimite: g.abracoLimite, abracoOptOut: g.abracoOptOut });
     membros(g.id).forEach(function (m) {
       // todos precisam confirmar de novo (e-mail pode ter mudado; alguém pode não querer participar). Só quem cria já fica confirmado.
       T('Membros').insert({ grupoId: id, email: m.email, desejos: '', confirmado: m.email === u.email ? agoraIso : '', tokenConvite: '', conviteEnviadoEm: '', incluidoEm: agoraIso, sorteioEmail: '', sorteioRecebidoEm: '', tokenRecebido: '' });
@@ -2434,7 +2539,7 @@ function abaAmigo(c, fresco){
         '<div class="desejos">'+(a.desejos? '<div class="rotulo" style="margin-bottom:4px">Gostaria de ganhar</div>'+esc(a.desejos) : 'Ainda não colocou sugestões de presente. Que tal perguntar pela conversa, sem se identificar?')+'</div>'+
         '<div class="linha-acoes" style="margin-top:14px"><button class="btn" data-ir="amigo">'+I.balao+'Conversar com meu amigo</button><button class="btn mata" data-ir="tirou">'+I.presente+'Falar com quem me tirou</button></div></div></div>';
     }
-    if(g.compraAtiva && !a.sorteado) h+='<div class="secao" id="compra-box"></div>';
+    if((g.compraAtiva || g.abracoAtivo) && !a.sorteado) h+='<div class="secao" id="compra-box"></div>';
     h+='<div class="secao"><h2>O que eu gostaria de ganhar</h2><div class="cartao pilha"><label class="campo">Suas sugestões aparecem para todos na lista do grupo e para quem tirou você'+'<textarea class="inp" id="des" maxlength="1500" placeholder="Ex.: livros de receitas, camisa tamanho M, vinho tinto…">'+esc(g.meusDesejos||'')+'</textarea></label><div class="linha-acoes"><button class="btn sec" id="des-ok">Salvar sugestões</button>'+(g.valorMinimo?'<span class="muted" style="font-size:13px">Valor mínimo do grupo: '+esc(moeda(g.valorMinimo))+'</span>':'')+'</div></div></div>';
     c.innerHTML=h;
     if($('#compra-box')) carregarCompra($('#compra-box'));
@@ -2448,10 +2553,12 @@ function abaAmigo(c, fresco){
 function linhaCopia(rot, val){ return val? '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><div style="min-width:0"><div class="rotulo">'+esc(rot)+'</div><div class="mono" style="overflow-wrap:anywhere;font-size:15px">'+esc(val)+'</div></div><button type="button" class="btn sec peq" data-copiar="'+esc(val)+'">Copiar</button></div>' : ''; }
 function ligarCopias(r){ $$('[data-copiar]', r).forEach(function(b){ b.onclick=function(){ var t=b.dataset.copiar; try{ navigator.clipboard.writeText(t).then(function(){ aviso('Copiado.'); }, function(){ aviso(t); }); }catch(e){ aviso(t); } }; }); }
 function carregarCompra(box){
-  box.innerHTML='<h2>Escolher quem eu vou tirar</h2>'+carregando();
+  box.innerHTML=carregando();
   chamar('compraInfo',{grupoId:S.gid}).then(function(c){
-    if(!c.ativa || c.sorteado){ box.remove(); return; }
-    var h='<h2>Escolher quem eu vou tirar</h2>';
+    if((!c.ativa && !c.abraco) || c.sorteado){ box.remove(); return; }
+    var h='';
+    if(c.ativa){
+    h+='<h2>Escolher quem eu vou tirar</h2>';
     if(c.anterior && !c.status){
       var an=c.anterior;
       h+='<div class="faixa info"><div>'+(an.devolvido? 'O valor do seu pedido anterior foi <b>devolvido</b> em '+dataBR(an.devolvidoEm)+'.' :
@@ -2469,7 +2576,10 @@ function carregarCompra(box){
     } else {
       h+='<div class="cartao pilha"><div>Neste grupo, quem quiser pode <b>comprar a escolha</b> de quem vai tirar, por <b>'+esc(c.valor)+'</b>. As vagas são limitadas e o valor ajuda a bancar a festa.</div><div class="muted" style="font-size:13px">Sigilo: só o administrador geral sabe quem pagou, para conferir o PIX. Ninguém, nem ele, vê quem você escolheu.</div><button class="btn" id="cp-quero">Quero comprar uma escolha</button></div>';
     }
+    }
+    if(c.abraco) h+=blocoAbraco(c.abraco);
     box.innerHTML=h;
+    ligarAbraco(box, c);
     var q=$('#cp-quero',box); if(q) q.onclick=function(){
       modal('<h2>Comprar uma escolha</h2><div>Faça um PIX de <b>'+esc(c.valor)+'</b> e depois toque em “Já fiz o PIX”.</div><div class="cartao pilha">'+linhaCopia('Chave PIX', c.pix)+linhaCopia('Titular', c.titular)+linhaCopia('Banco', c.banco)+linhaCopia('Agência', c.agencia)+linhaCopia('Conta', c.conta)+'</div><div class="muted" style="font-size:13px">Se as vagas se esgotarem antes da confirmação, o administrador devolve o valor.</div><div class="linha-acoes" style="justify-content:flex-end"><button class="btn sec" data-fechar>Agora não</button><button class="btn" id="cp-paguei">Já fiz o PIX, avisar</button></div>', function(m, fechar){
         ligarCopias(m);
@@ -2485,6 +2595,50 @@ function carregarCompra(box){
       });
     };
   }).catch(function(e){ box.innerHTML=''; falha(e); });
+}
+
+/* ---------- Abraço Garantido (participante) ---------- */
+function blocoAbraco(ab){
+  var h='<h2 style="margin-top:6px">🤗 Abraço Garantido</h2>';
+  if(ab.anterior && !ab.status){
+    var an=ab.anterior;
+    h+='<div class="faixa info"><div>'+(an.devolvido? 'O valor do seu pedido anterior de Abraço Garantido foi <b>devolvido</b> em '+dataBR(an.devolvidoEm)+'.' : an.semPagamento? 'Seu pedido anterior de Abraço Garantido foi encerrado.' :
+      (an.motivo==='cancelado'? 'Você cancelou o seu pedido anterior de Abraço Garantido.' : 'Seu pedido anterior de Abraço Garantido não pôde ser atendido.')+' Se você já tinha feito o PIX, o administrador geral vai conferir e, comprovado o pagamento, o valor será devolvido para você.')+'</div></div>';
+  }
+  if(ab.status==='escolhido'){
+    h+='<div class="cartao pilha abraco-feito"><div class="rotulo">Seu Abraço Garantido</div><div style="font-family:var(--f-titulo);font-size:22px;line-height:1.25"><b>'+esc(ab.par.a)+'</b> vai tirar <b>'+esc(ab.par.b)+'</b></div><div class="muted">O sorteio vai respeitar esse par. Ninguém sabe que foi você, nem os dois, nem os administradores. Guarde segredo e aproveite o abraço na revelação! 🤗</div></div>';
+  } else if(ab.status==='liberado'){
+    var op='<option value="">— escolher —</option>'+ab.opcoes.map(function(o){ return '<option value="'+esc(o.id)+'">'+esc(o.nome)+'</option>'; }).join('');
+    h+='<div class="cartao pilha"><div><b>Pagamento confirmado!</b> Escolha o par: quem vai tirar quem. A escolha é definitiva, e você não pode fazer parte do par.</div>'+
+      '<label class="campo">Quem vai tirar<select class="inp" id="ab-a">'+op+'</select></label><label class="campo">Quem será tirado(a)<select class="inp" id="ab-b">'+op+'</select></label><button class="btn" id="ab-esc">Confirmar o par</button></div>';
+  } else if(ab.status==='pedido'){
+    h+='<div class="cartao pilha"><div><b>Pedido enviado.</b> Assim que o administrador geral confirmar o seu PIX, você poderá escolher o par aqui.</div><button class="btn sec peq" id="ab-canc">Cancelar pedido</button></div>';
+  } else if(!ab.disponivel){
+    h+='<div class="cartao cadeado">'+I.cadeado+'<div><b>Abraço Garantido indisponível.</b><div class="muted">As vagas deste grupo já foram preenchidas.</div></div></div>';
+  } else {
+    h+='<div class="cartao pilha"><div>Quer garantir que duas pessoas se encontrem na revelação? Com o <b>Abraço Garantido</b>, você escolhe <b>quem vai tirar quem</b>, por <b>'+esc(ab.valor)+'</b>. Vale para quaisquer duas pessoas do grupo, menos você.</div>'+
+      '<div class="muted" style="font-size:13px">Sigilo: ninguém fica sabendo que foi você, nem o par, nem os administradores. Só você saberá, então guarde segredo! As vagas são limitadas e o valor ajuda a bancar a festa.</div><button class="btn" id="ab-quero">🤗 Quero dar um Abraço Garantido</button></div>';
+  }
+  return h;
+}
+function ligarAbraco(box, c){
+  var ab=c.abraco; if(!ab) return;
+  var q=$('#ab-quero',box); if(q) q.onclick=function(){
+    modal('<h2>Abraço Garantido</h2><div>Faça um PIX de <b>'+esc(ab.valor)+'</b> e depois toque em “Já fiz o PIX”.</div><div class="cartao pilha">'+linhaCopia('Chave PIX', c.pix)+linhaCopia('Titular', c.titular)+linhaCopia('Banco', c.banco)+linhaCopia('Agência', c.agencia)+linhaCopia('Conta', c.conta)+'</div><div class="muted" style="font-size:13px">Depois que o administrador geral confirmar o pagamento, você escolhe o par aqui mesmo. Se as vagas se esgotarem antes, o valor é devolvido.</div><div class="linha-acoes" style="justify-content:flex-end"><button class="btn sec" data-fechar>Agora não</button><button class="btn" id="ab-paguei">Já fiz o PIX, avisar</button></div>', function(m, fechar){
+      ligarCopias(m);
+      $('#ab-paguei',m).onclick=function(){ ocupado(this, function(){ return chamar('pedirCompra',{grupoId:S.gid, tipo:'abraco'}).then(function(){ fechar(); aviso('Pedido enviado ao administrador geral.'); carregarCompra(box); }); }); };
+    });
+  };
+  var cc=$('#ab-canc',box); if(cc) cc.onclick=function(){ confirmar('Cancelar o pedido?','O administrador geral será avisado. Se você já fez o PIX, ele vai conferir e, comprovado o pagamento, devolver o valor para você.','Cancelar pedido').then(function(ok){ if(ok) ocupado(cc, function(){ return chamar('cancelarPedido',{grupoId:S.gid, tipo:'abraco'}).then(function(){ aviso('Pedido cancelado. O administrador geral foi avisado.'); carregarCompra(box); }); }); }); };
+  var ce=$('#ab-esc',box); if(ce) ce.onclick=function(){
+    var sa=$('#ab-a',box), sb=$('#ab-b',box);
+    if(!sa.value || !sb.value) return aviso('Escolha as duas pessoas.', true);
+    if(sa.value===sb.value) return aviso('Escolha duas pessoas diferentes.', true);
+    var na=sa.options[sa.selectedIndex].text, nb=sb.options[sb.selectedIndex].text;
+    confirmar(na+' vai tirar '+nb+'?', 'O par é definitivo e o sorteio vai respeitá-lo. Ninguém saberá que foi você.', 'Confirmar o par').then(function(ok){
+      if(ok) chamar('escolherAbraco',{grupoId:S.gid, a:sa.value, b:sb.value}).then(function(){ aviso('Abraço Garantido registrado! 🤗'); carregarCompra(box); }).catch(falha);
+    });
+  };
 }
 
 /* ---------- aba: conversas ---------- */
@@ -2708,7 +2862,7 @@ function abaAjuda(c){
         'Antes do sorteio, mostra a data, o horário, o local e o valor mínimo do presente.',
         'Depois do sorteio, toque em <b>Toque para ver</b> para descobrir quem você tirou (confira se ninguém está olhando a tela!). Aparecem também as sugestões de presente dessa pessoa.',
         'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você.'
-      ].concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'] : [])))+
+      ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'] : [])))+
       bloco('balao','Conversas', lst([
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
         'Em <b>Nova mensagem</b>, escreva para qualquer pessoa do grupo, com seu nome ou anonimamente.',
@@ -2760,6 +2914,7 @@ function abaAjuda(c){
     bloco('escudo','Dados do grupo e compra de escolha', lst([
       'Em <b>Dados do grupo</b>: nome, foto ou logo, valor mínimo, data e horário, local e endereço, auditor e se os participantes podem informar o celular.',
       '<b>Compra de escolha:</b> ative só se o grupo concordar. Defina valor, limite e dados do PIX. O administrador geral confirma os pagamentos, e ninguém vê quem cada comprador escolheu.',
+      '<b>Abraço Garantido:</b> na mesma seção, ative para permitir que alguém pague para escolher um par de outras duas pessoas. Tem valor e limite próprios e usa o mesmo PIX. Você pode permitir que os participantes fiquem de fora pelo Perfil.',
       'Depois da revelação, crie a <b>edição do próximo ano</b> com os mesmos participantes.'
     ]), ' class="papel-ajuda"')+
     bloco('escudo','Mensagens', lst([
@@ -2795,6 +2950,7 @@ function telaPerfil(c){
     '<div class="muted" style="font-size:13px">O celular fica visível apenas para os administradores.</div>'+
     '<button class="btn" id="pf-ok">Salvar perfil</button></div></div>'+
     (S.g && S.g.souMembro && !S.g.suporte && !S.g.souAdmin && !semGrupo? '<div class="secao"><h2>Fale com os administradores</h2><div class="cartao pilha" id="pf-recados">'+carregando()+'</div></div>' : '')+
+    (S.g && S.g.souMembro && !semGrupo && S.g.abracoAtivo && S.g.abracoOptOut? '<div class="secao"><h2>Abraço Garantido</h2><div class="cartao pilha"><label style="display:flex;gap:10px;align-items:flex-start;font-weight:600"><input type="checkbox" id="pf-semab" '+(S.g.semAbraco?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> Não quero ser incluído(a) em um Abraço Garantido</label><div class="muted" style="font-size:13px">No Abraço Garantido, alguém paga para escolher quem vai tirar quem. Se marcar, ninguém poderá incluir você em um par. Só você vê esta opção, e ela vale para os próximos pedidos.</div></div></div>' : '')+
     '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
     '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
     '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s"><div class="grade2"><label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label></div><button class="btn sec">Trocar senha</button></form></div>'+
@@ -2807,6 +2963,7 @@ function telaPerfil(c){
   $('#pf-sair').onclick=function(){ sair(false); };
   desenharAvisos($('#pf-avisos'));
   desenharEmail($('#pf-email'));
+  var sab=$('#pf-semab'); if(sab) sab.onchange=function(){ var v=sab.checked; chamar('preferenciaAbraco',{grupoId:S.gid, sem:v}).then(function(g2){ S.g=g2; aviso(v?'Pronto: você não será incluído(a) em um Abraço Garantido.':'Pronto: você pode ser incluído(a) em um Abraço Garantido.'); }).catch(function(e){ sab.checked=!v; falha(e); }); };
   var rc=$('#pf-recados'); if(rc) chamar('recados',{grupoId:S.gid}).then(function(d){ desenharRecados(rc, d); }).catch(function(){ rc.closest('.secao').remove(); });
 }
 /* Participante -> administradores do grupo (não é o administrador geral) */
@@ -2907,10 +3064,10 @@ function abaAuditor(c){
 /* ---------- resultado completo (a partir do dia seguinte) ---------- */
 function blocoTotaisCompras(t){
   if(!t) return '';
-  return '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="rotulo">Escolhas compradas</div><div class="n">'+t.feitas+'</div>'+(t.pagas>t.feitas?'<div class="muted" style="font-size:12px">'+t.pagas+' pagas</div>':'')+'</div><div><div class="rotulo">Total arrecadado</div><div class="n" style="font-size:22px;padding-top:3px">'+(t.arrecadado?'R$ '+esc(t.arrecadado):'—')+'</div>'+(t.valor?'<div class="muted" style="font-size:12px">R$ '+esc(t.valor)+' por escolha</div>':'')+'</div></div>';
+  return '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="rotulo">Escolhas compradas</div><div class="n">'+t.feitas+'</div>'+(t.temAbraco?'<div class="muted" style="font-size:12px">+ '+t.abracos+' Abraço(s) Garantido(s)</div>':'')+(t.pagas>t.feitas?'<div class="muted" style="font-size:12px">'+t.pagas+' pagas</div>':'')+'</div><div><div class="rotulo">Total arrecadado</div><div class="n" style="font-size:22px;padding-top:3px">'+(t.arrecadado?'R$ '+esc(t.arrecadado):'—')+'</div>'+(t.valor?'<div class="muted" style="font-size:12px">R$ '+esc(t.valor)+' por escolha</div>':'')+'</div></div>';
 }
 function resultadoHTML(r){
-  return '<div class="folha"><div class="cab"><div class="lg">'+(S.g.logo?'<img src="'+esc(S.g.logo)+'" alt="">':marca('#21402f','#c9973a'))+'</div><div><h3>'+esc(r.grupo)+'</h3><div class="meta">Resultado do sorteio · revelação em '+dataBR(r.dataRevelacao)+' · código '+esc(r.codigo)+'</div>'+(r.trapaca==='sim'?'<div class="meta"><b>Auditor registrou trapaça.</b> '+esc(r.trapacaNota||'')+'</div>':'')+(r.compras?'<div class="meta">Compras de escolha: <b>'+r.compras.feitas+'</b> escolha(s)'+(r.compras.arrecadado?' · total arrecadado <b>R$ '+esc(r.compras.arrecadado)+'</b>':'')+'</div>':'')+'</div></div>'+
+  return '<div class="folha"><div class="cab"><div class="lg">'+(S.g.logo?'<img src="'+esc(S.g.logo)+'" alt="">':marca('#21402f','#c9973a'))+'</div><div><h3>'+esc(r.grupo)+'</h3><div class="meta">Resultado do sorteio · revelação em '+dataBR(r.dataRevelacao)+' · código '+esc(r.codigo)+'</div>'+(r.trapaca==='sim'?'<div class="meta"><b>Auditor registrou trapaça.</b> '+esc(r.trapacaNota||'')+'</div>':'')+(r.compras?'<div class="meta">Compras de escolha: <b>'+r.compras.feitas+'</b> escolha(s)'+(r.compras.temAbraco?' · Abraço Garantido: <b>'+r.compras.abracos+'</b>':'')+(r.compras.arrecadado?' · total arrecadado <b>R$ '+esc(r.compras.arrecadado)+'</b>':'')+'</div>':'')+'</div></div>'+
     '<table><thead><tr><th style="text-align:center">Nº</th><th>Participante</th><th>Amigo secreto</th></tr></thead><tbody>'+r.lista.map(function(l){ return '<tr><td class="n">'+l.n+'</td><td>'+esc(l.participante)+'</td><td>'+esc(l.amigo)+'</td></tr>'; }).join('')+'</tbody></table>'+
     '<div class="dica">A lista está na ordem do círculo: cada amigo secreto é o participante da linha seguinte, e o último tirou o primeiro.</div></div>';
 }
@@ -2951,7 +3108,7 @@ function desenharAdmin(c){
   var libera = g.dataRevelacao? dataBR(somaDia(g.dataRevelacao,1)) : 'o dia seguinte à revelação';
   var pdg = S.eu && S.eu.pendencias;
   var temCompra = !!blocoCompraAdmin(g);
-  var subs=[{id:'resumo',t:'Resumo'},{id:'participantes',t:'Participantes'},{id:'mensagens',t:'Mensagens'}].concat(temCompra?[{id:'compra',t:'Compra de escolha'}]:[]).concat([{id:'grupo',t:'Dados do grupo'}]);
+  var subs=[{id:'resumo',t:'Resumo'},{id:'participantes',t:'Participantes'},{id:'mensagens',t:'Mensagens'}].concat(temCompra?[{id:'compra',t:'Compras'}]:[]).concat([{id:'grupo',t:'Dados do grupo'}]);
   var sub=S.subAdmin && subs.some(function(x){ return x.id===S.subAdmin; })? S.subAdmin : 'resumo';
   function aba(id){ return id===sub? '' : ' hidden'; }
   c.innerHTML=
@@ -3076,30 +3233,37 @@ function blocoCompraAdmin(g){
   var resumo='';
   if(k.ativa){
     resumo+='<div class="estado" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
-      '<div><div class="rotulo">Vagas</div><div class="n">'+k.limite+'</div></div>'+
-      '<div><div class="rotulo">Escolhas feitas</div><div class="n">'+(k.feitas!=null? k.feitas : '<span style="font-size:14px" class="muted">no dia da revelação</span>')+'</div></div>'+
+      '<div><div class="rotulo">Vagas</div><div class="n">'+(k.escolhaAtiva?k.limite:'—')+'</div>'+(k.abracoAtiva?'<div class="muted" style="font-size:12px">+ '+k.abracoLimite+' abraço(s)</div>':'')+'</div>'+
+      '<div><div class="rotulo">Escolhas feitas</div><div class="n">'+(k.feitas!=null? k.feitas : '<span style="font-size:14px" class="muted">no dia da revelação</span>')+'</div>'+(k.abracos!=null && k.abracoAtiva?'<div class="muted" style="font-size:12px">'+k.abracos+' abraço(s) garantido(s)</div>':'')+'</div>'+
       '<div><div class="rotulo">Arrecadado</div><div class="n" style="font-size:20px;padding-top:4px">'+(k.arrecadado!=null? (k.arrecadado? 'R$ '+esc(k.arrecadado) : '—') : '<span style="font-size:14px" class="muted">no dia da revelação</span>')+'</div></div></div>';
     if(k.aguardando && !g.sorteado) resumo+='<div class="faixa aviso-f">Há compra(s) de escolha em andamento. O sorteio fica bloqueado até que sejam concluídas ou recusadas pelo administrador geral.</div>';
   }
-  return '<div class="secao"><h2>Compra de escolha</h2>'+resumo+
+  return '<div class="secao"><h2>Compra de escolha e Abraço Garantido</h2>'+resumo+
     (g.souMestre && (k.ativa || k.historico)? '<div class="cartao pilha" id="ad-pedidos"><div class="rotulo">Pedidos (só você vê os nomes)</div>'+carregando()+'</div>' : '')+
     (g.sorteado? '' : '<form class="cartao pilha" id="ad-cp">'+
-      '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="cp-ativa" '+(k.ativa?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes comprem a escolha de quem vão tirar</label>'+
+      '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="cp-ativa" '+(k.escolhaAtiva?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes comprem a escolha de quem vão tirar</label>'+
       '<div class="muted" style="font-size:13px">Ative só se o grupo concordar. Somente o administrador geral confirma os pagamentos, e ninguém vê quem cada comprador escolheu.</div>'+
       '<div class="grade2"><label class="campo">Valor da escolha (R$)<input class="inp" id="cp-valor" inputmode="decimal" value="'+esc(k.valor||'')+'" placeholder="50,00"></label><label class="campo">Limite de escolhas no grupo<input class="inp" id="cp-lim" type="number" min="1" max="10" value="'+esc(k.limite||3)+'"></label></div>'+
       '<label class="campo">Chave PIX<input class="inp" id="cp-pix" value="'+esc(k.pix||'')+'"></label>'+
       '<label class="campo">Titular da conta<input class="inp" id="cp-tit" value="'+esc(k.titular||'')+'"></label>'+
       '<div class="grade2"><label class="campo">Banco<input class="inp" id="cp-banco" value="'+esc(k.banco||'')+'"></label><div class="grade2" style="gap:8px"><label class="campo">Agência<input class="inp" id="cp-ag" value="'+esc(k.agencia||'')+'"></label><label class="campo">Conta<input class="inp" id="cp-conta" value="'+esc(k.conta||'')+'"></label></div></div>'+
-      '<button class="btn sec">Salvar compra de escolha</button></form>')+
+      '<div class="rotulo" style="margin-top:6px">🤗 Abraço Garantido</div>'+
+      '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="ab-ativa" '+(k.abracoAtiva?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes paguem para escolher quem vai tirar quem (um par de outras duas pessoas)</label>'+
+      '<div class="muted" style="font-size:13px">Quem paga escolhe o par e não pode fazer parte dele. Ninguém fica sabendo quem pagou nem qual foi o par. Usa os mesmos dados de PIX acima.</div>'+
+      '<div class="grade2"><label class="campo">Valor do Abraço Garantido (R$)<input class="inp" id="ab-valor" inputmode="decimal" value="'+esc(k.abracoValor||'')+'" placeholder="100,00"></label><label class="campo">Limite de abraços no grupo<input class="inp" id="ab-lim" type="number" min="1" max="10" value="'+esc(k.abracoLimite||1)+'"></label></div>'+
+      '<label style="display:flex;gap:10px;align-items:flex-start;font-weight:600;font-size:14px"><input type="checkbox" id="ab-optout" '+(k.abracoOptOut?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> Permitir que participantes fiquem de fora do Abraço Garantido (opção no Perfil de cada um)</label>'+
+      '<button class="btn sec">Salvar compras</button></form>')+
   '</div>';
 }
 function ligarCompraAdmin(c){
   var f=$('#ad-cp'); if(f) f.onsubmit=function(ev){ ev.preventDefault();
-    var d={compraAtiva:$('#cp-ativa').checked, compraValor:$('#cp-valor').value, compraLimite:$('#cp-lim').value, compraPix:$('#cp-pix').value, compraTitular:$('#cp-tit').value, compraBanco:$('#cp-banco').value, compraAgencia:$('#cp-ag').value, compraConta:$('#cp-conta').value};
-    ocupado(f.querySelector('.btn'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; aviso('Compra de escolha salva.'); desenharAdmin(c); }); }); };
+    var d={compraAtiva:$('#cp-ativa').checked, compraValor:$('#cp-valor').value, compraLimite:$('#cp-lim').value, compraPix:$('#cp-pix').value, compraTitular:$('#cp-tit').value, compraBanco:$('#cp-banco').value, compraAgencia:$('#cp-ag').value, compraConta:$('#cp-conta').value,
+      abracoAtivo:$('#ab-ativa').checked, abracoValor:$('#ab-valor').value, abracoLimite:$('#ab-lim').value, abracoOptOut:$('#ab-optout').checked};
+    ocupado(f.querySelector('.btn'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; aviso('Compras salvas.'); desenharAdmin(c); }); }); };
   var box=$('#ad-pedidos'); if(!box) return;
   function desenhar(ps){
     var rot={pedido:'<span class="chip aviso">aguardando confirmação</span>', liberado:'<span class="chip">liberado, ainda não escolheu</span>', escolhido:'<span class="chip ok">escolha feita</span>'};
+    function tipoChip(p){ return p.tipo==='abraco'? ' <span class="chip ouro">🤗 Abraço Garantido</span>' : ' <span class="chip">compra de escolha</span>'; }
     var motivo={cancelado:'cancelado pelo participante', recusado:'recusado', removido:'participante removido do grupo'};
     var ativos=ps.filter(function(p){ return !p.encerrada; }), hist=ps.filter(function(p){ return p.encerrada; });
     function situacao(p){
@@ -3107,10 +3271,10 @@ function ligarCompraAdmin(c){
       if(p.pagamento==='nao-recebido') return '<span class="chip">sem pagamento</span>';
       return p.liberadoEm? '<span class="chip erro">pagamento confirmado: devolver</span>' : '<span class="chip aviso">conferir pagamento</span>';
     }
-    box.innerHTML='<div class="rotulo">Pedidos (só você vê os nomes)</div>'+(ativos.length? '<div class="lista">'+ativos.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1">'+esc(p.nome)+'</div><div class="t2">pedido em '+quando(p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+rot[p.status]+
+    box.innerHTML='<div class="rotulo">Pedidos (só você vê os nomes)</div>'+(ativos.length? '<div class="lista">'+ativos.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1" style="flex-wrap:wrap">'+esc(p.nome)+tipoChip(p)+'</div><div class="t2">pedido em '+quando(p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+rot[p.status]+
       (p.status==='pedido' && !S.g.sorteado? '<button class="btn peq" data-lib="'+esc(p.id)+'">PIX recebido, liberar</button>':'')+(p.status!=='escolhido' && !S.g.sorteado? '<button class="btn sec peq" data-rec="'+esc(p.id)+'">Recusar</button>':'')+'</div></div>'; }).join('')+'</div>' : '<div class="muted">Nenhum pedido em andamento.</div>')+
       '<div class="muted" style="font-size:12.5px">Confira o PIX no seu banco antes de liberar. Se recusar, o participante é avisado (sem o motivo) de que, comprovado o pagamento, o valor será devolvido.</div>'+
-      (hist.length? '<div class="rotulo" style="margin-top:6px">Histórico: cancelados e recusados</div><div class="lista">'+hist.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1">'+esc(p.nome)+'</div><div class="t2" style="white-space:normal">'+esc(motivo[p.motivo]||'encerrado')+' em '+quando(p.encerradoEm||p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+situacao(p)+
+      (hist.length? '<div class="rotulo" style="margin-top:6px">Histórico: cancelados e recusados</div><div class="lista">'+hist.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1" style="flex-wrap:wrap">'+esc(p.nome)+tipoChip(p)+'</div><div class="t2" style="white-space:normal">'+esc(motivo[p.motivo]||'encerrado')+' em '+quando(p.encerradoEm||p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+situacao(p)+
         (p.pendente? '<button class="btn peq" data-dev="'+esc(p.id)+'">Devolução feita</button><button class="btn sec peq" data-semp="'+esc(p.id)+'">Não houve pagamento</button>':'')+'</div></div>'; }).join('')+'</div><div class="muted" style="font-size:12.5px">Ao marcar “Devolução feita”, o participante recebe um aviso por e-mail e no Telegram.</div>' : '');
     $$('[data-lib]',box).forEach(function(b){ b.onclick=function(){ ocupado(b, function(){ return chamar('decidirCompra',{grupoId:S.gid,id:b.dataset.lib,aprovar:true}).then(function(ps2){ aviso('Escolha liberada. A pessoa foi avisada por e-mail.'); desenhar(ps2); recarregarGrupo(); atualizarPendencias(); }); }); }; });
     $$('[data-rec]',box).forEach(function(b){ b.onclick=function(){ confirmar('Recusar este pedido?','O pedido é cancelado e vai para o histórico. O participante recebe um aviso, sem o motivo, de que, comprovado o pagamento, o valor será devolvido. Depois, registre aqui a devolução.','Recusar').then(function(ok){ if(ok) chamar('decidirCompra',{grupoId:S.gid,id:b.dataset.rec,aprovar:false}).then(function(ps2){ aviso('Pedido recusado. O participante foi avisado.'); desenhar(ps2); recarregarGrupo(); atualizarPendencias(); }).catch(falha); }); }; });
