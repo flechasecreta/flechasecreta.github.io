@@ -25,11 +25,17 @@
   @media (prefers-color-scheme: dark) { body.capa, html.capa { background: #16291e; } }
   #app {
     position: fixed; border: 0; background: #eef1ea;
-    top: env(safe-area-inset-top, 0px); bottom: env(safe-area-inset-bottom, 0px);
+    top: env(safe-area-inset-top, 0px); bottom: 0;
     left: env(safe-area-inset-left, 0px); right: env(safe-area-inset-right, 0px);
     width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
-    height: calc(100% - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    height: calc(100% - env(safe-area-inset-top, 0px));
   }
+  #medida { position: fixed; visibility: hidden; pointer-events: none; padding-bottom: env(safe-area-inset-bottom, 0px); padding-top: env(safe-area-inset-top, 0px); }
+  /* dica no Safari: abrir pelo ícone */
+  #dica { position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 10px); z-index: 5; background: #fbfcf8; color: #1d2620; border: 1.5px solid #c9973a; border-radius: 14px; padding: 12px 40px 12px 14px;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; box-shadow: 0 8px 28px rgba(0,0,0,.3); transition: opacity .3s; }
+  #dica b { color: #21402f; }
+  #dica button { position: absolute; top: 6px; right: 6px; border: 0; background: none; font-size: 20px; padding: 6px 10px; color: #55615a; cursor: pointer; }
   #abertura {
     position: fixed; inset: 0; display: grid; place-items: center; align-content: center; gap: 18px;
     background: #21402f; color: #f3ead2; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -50,6 +56,7 @@
   <div class="ajuda" id="ajuda">Carregando a demonstração…</div>
 </div>
 <iframe id="app" title="Flecha Secreta" allow="clipboard-write"></iframe>
+<div id="medida"></div>
 <script>
 /* ===================================================================
  * Página de entrada do Flecha Secreta.
@@ -61,6 +68,9 @@ var CHAVE = 'flecha-dados-demo';
 
 function ler() { try { return JSON.parse(localStorage.getItem(CHAVE) || '{}'); } catch (e) { return {}; } }
 function gravar(d) { try { localStorage.setItem(CHAVE, JSON.stringify(d)); } catch (e) {} }
+var GRANDES = ['flecha-fotos', 'flecha-cache'];
+function lerTudo() { var d = ler(); GRANDES.forEach(function (k) { try { var v = localStorage.getItem(CHAVE + ':' + k); if (v != null) d[k] = v; } catch (e) {} }); return d; }
+function margens() { var m = document.getElementById('medida'), cs = getComputedStyle(m); return { topo: parseFloat(cs.paddingTop) || 0, base: parseFloat(cs.paddingBottom) || 0 }; }
 
 /* Repassa ao aplicativo os links que chegam por e-mail (?acao=...&t=...) e limpa o endereço */
 var busca = location.search;
@@ -73,17 +83,43 @@ function doGoogle(origem) { if (origem === location.origin) return true; try { r
 window.addEventListener('message', function (ev) {
   if (!doGoogle(ev.origin) || !ev.data || !ev.data.flecha) return;
   if (ev.data.flecha === 'pedir') {
-    ev.source.postMessage({ flecha: 'dados', dados: ler() }, ev.origin);
+    ev.source.postMessage({ flecha: 'dados', dados: lerTudo(), margens: margens() }, ev.origin);
     esconderAbertura();
   } else if (ev.data.flecha === 'base') {
     var capa = ev.data.modo === 'capa';
     document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
+  } else if (ev.data.flecha === 'teclado') {
+    voltarAoTopo();
   } else if (ev.data.flecha === 'salvar' && typeof ev.data.chave === 'string' && /^flecha-/.test(ev.data.chave)) {
+    if (GRANDES.indexOf(ev.data.chave) >= 0) {
+      try { if (ev.data.valor == null) localStorage.removeItem(CHAVE + ':' + ev.data.chave); else localStorage.setItem(CHAVE + ':' + ev.data.chave, String(ev.data.valor).slice(0, 3000000)); } catch (e) {}
+      return;
+    }
     var d = ler();
     if (ev.data.valor == null) delete d[ev.data.chave]; else d[ev.data.chave] = String(ev.data.valor).slice(0, 20000);
     gravar(d);
   }
 });
+
+/* iPhone: depois que o teclado fecha, a página às vezes fica "deslocada" e o toque cai fora do botão. Recoloca no lugar. */
+function voltarAoTopo() { if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) window.scrollTo(0, 0); }
+window.addEventListener('scroll', function () { setTimeout(voltarAoTopo, 60); });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', function () { if (window.visualViewport.height >= window.innerHeight - 80) setTimeout(voltarAoTopo, 60); });
+}
+
+/* No Safari (fora do ícone da tela de início), uma dica rápida */
+(function () {
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var noIcone = window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  return; // a demonstração não mostra a dica do ícone
+  try { var ate = +localStorage.getItem('flecha-dica-ate') || 0; if (Date.now() < ate) return; } catch (e) {}
+  var d = document.createElement('div'); d.id = 'dica';
+  d.innerHTML = '📲 <b>Você está no Safari.</b> Se já colocou o Flecha Secreta na tela de início, abra pelo <b>ícone</b>. Se ainda não, toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>.<button aria-label="Fechar">✕</button>';
+  function fechar() { d.style.opacity = '0'; setTimeout(function () { d.remove(); }, 300); try { localStorage.setItem('flecha-dica-ate', String(Date.now() + 3 * 864e5)); } catch (e) {} }
+  d.querySelector('button').onclick = fechar;
+  setTimeout(function () { document.body.appendChild(d); setTimeout(fechar, 12000); }, 2500);
+})();
 
 var abertura = document.getElementById('abertura');
 function esconderAbertura() { abertura.classList.add('some'); }

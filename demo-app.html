@@ -62,6 +62,13 @@ a{color:var(--brasa)}
 .rotulo{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tinta-2);font-weight:600}
 .muted{color:var(--tinta-2)}
 .wrap{max-width:760px;margin:0 auto;padding-left:max(16px,var(--sal));padding-right:max(16px,var(--sar))}
+/* tablets e computadores: um pouco mais de área útil, mantendo uma coluna central */
+@media (min-width:900px){ .wrap{max-width:880px} .grade-part{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))} .modal{max-width:580px} }
+/* celular deitado: cabeçalho e abas mais baixos para sobrar espaço */
+@media (max-height:480px) and (orientation:landscape){ .topo .wrap{padding-block:4px} .topo .logo{width:36px;height:36px} .abas button{padding:3px 2px;grid-auto-flow:column;gap:6px;align-items:center} main{padding-bottom:calc(56px + var(--sab))} }
+/* celulares bem estreitos */
+@media (max-width:360px){ .btn{padding:10px 14px} .faixa-info .val{font-size:17px} .topo .tit h1{font-size:17px} .abas.muitas button{font-size:9.5px;letter-spacing:-.02em} .abas.muitas .wrap{padding-left:2px;padding-right:2px} }
+.abas button span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 
 /* ---------- botões e campos ---------- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:999px;padding:11px 18px;font-weight:600;cursor:pointer;background:var(--brasa);color:#fff;text-decoration:none;min-height:44px}
@@ -122,6 +129,7 @@ main{padding-bottom:calc(90px + var(--sab))}
 .abas button[aria-current="true"]{color:var(--brasa)}
 .sub-abas{position:sticky;top:64px;z-index:15;background:var(--fundo);display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:12px 16px 10px;margin:0 -16px;border-bottom:1px solid var(--linha)}
 .sub-abas::-webkit-scrollbar{display:none}
+.sub-abas.mais{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent)}
 .sub-abas button{flex:none;border:1.5px solid var(--linha);background:var(--cartao);color:var(--tinta-2);border-radius:999px;padding:7px 13px;font-weight:600;font-size:13.5px;cursor:pointer;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
 .sub-abas button[aria-current="true"]{background:var(--mata-2);border-color:var(--mata-2);color:var(--sobre-mata)}
 .sub-abas .cont{font-size:11.5px;background:color-mix(in srgb,currentColor 14%,transparent);border-radius:999px;padding:0 7px;line-height:18px}
@@ -168,6 +176,10 @@ main{padding-bottom:calc(90px + var(--sab))}
 .bolha:not(.minha){border-bottom-left-radius:5px}
 .bolha .meta{font-size:11px;opacity:.7;margin-top:3px}
 .compor{position:sticky;bottom:calc(64px + var(--sab));background:var(--fundo);padding:10px 0;display:flex;gap:8px;align-items:flex-end}
+.senha-wrap{position:relative;display:block}
+.senha-wrap .inp{padding-right:48px}
+.senha-wrap .olho{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:42px;height:42px;border:0;background:none;color:var(--tinta-2);display:grid;place-items:center;cursor:pointer;border-radius:10px}
+.senha-wrap .olho svg{width:22px;height:22px}
 .compor textarea{min-height:46px;max-height:45vh;flex:1;resize:none;line-height:1.4}
 .bolha{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .bolha .citacao{margin:0 0 6px;font-size:12.5px}
@@ -333,8 +345,8 @@ var TABELAS = {
   Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira'],
   Grupos: ['id', 'nome', 'logo', 'valorMinimo', 'dataRevelacao', 'horaRevelacao', 'localNome', 'localEndereco', 'auditor', 'admins', 'sorteioEm', 'sorteioCodigo', 'trapaca', 'trapacaNota', 'criadoPor', 'criadoEm',
     'compraAtiva', 'compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix', 'compraLimite', 'edicaoDe', 'telefoneLiberado',
-    'abracoAtivo', 'abracoValor', 'abracoLimite', 'abracoOptOut'],
-  Membros: ['grupoId', 'email', 'desejos', 'confirmado', 'tokenConvite', 'conviteEnviadoEm', 'incluidoEm', 'sorteioEmail', 'sorteioRecebidoEm', 'tokenRecebido', 'boasVindas', 'semAbraco'],
+    'abracoAtivo', 'abracoValor', 'abracoLimite', 'abracoOptOut', 'compraOptOut'],
+  Membros: ['grupoId', 'email', 'desejos', 'confirmado', 'tokenConvite', 'conviteEnviadoEm', 'incluidoEm', 'sorteioEmail', 'sorteioRecebidoEm', 'tokenRecebido', 'boasVindas', 'semAbraco', 'semEscolha'],
   Sorteios: ['grupoId', 'dados', 'criadoEm'],
   Conversas: ['id', 'grupoId', 'tipo', 'dados', 'criadoEm'],
   Mensagens: ['id', 'grupoId', 'conversaId', 'dados', 'em'],
@@ -837,7 +849,7 @@ var Core = (function () {
       if (!telefoneLiberadoPara(u.email)) erro('O administrador não liberou a edição do telefone.');
       p.telefone = formatarTelefone(a.telefone);
     }
-    if (a.foto != null) { if (String(a.foto).length > 48000) erro('Foto muito grande.'); p.foto = a.foto; }
+    if (a.foto != null && !/^f:/.test(String(a.foto))) { if (String(a.foto).length > 48000) erro('Foto muito grande.'); p.foto = a.foto; }
     T('Usuarios').update(function (x) { return x.email === u.email; }, p);
     return api.eu(a);
   };
@@ -951,8 +963,10 @@ var Core = (function () {
     if (compras(gid).some(function (c) { return c.tipo === 'escolha' && c.comprador === a && (c.status === 'pedido' || c.status === 'liberado'); })) return false;
     return semCirculo(f, a, b, membros(gid).length);
   }
+  function foraDaEscolha(g, m) { return !!(m && g.compraOptOut === 'sim' && m.semEscolha === 'sim'); }
   function escolhaPossivel(gid, comprador, alvo, n) {
     if (!alvo || alvo === comprador || !membro(gid, alvo)) return false;
+    if (foraDaEscolha(grupo(gid), membro(gid, alvo))) return false;
     var f = fixasDe(gid);
     if (f[comprador]) return false;
     if (Object.keys(f).some(function (k) { return f[k] === alvo; })) return false;
@@ -988,6 +1002,7 @@ var Core = (function () {
       resultadoLiberado: liberadoResultado(g), diaRevelacao: diaRevelacaoChegou(g),
       suporte: !x.m && ehSuper(u.email), telefoneLiberado: g.telefoneLiberado === 'sim', souMestre: ehSuper(u.email), compraAtiva: g.compraAtiva === 'sim', compraValor: g.compraValor || '',
       abracoAtivo: g.abracoAtivo === 'sim', abracoValor: g.abracoValor || '', abracoOptOut: g.abracoOptOut === 'sim', semAbraco: !!(x.m && x.m.semAbraco === 'sim'),
+      compraOptOut: g.compraOptOut === 'sim', semEscolha: !!(x.m && x.m.semEscolha === 'sim'),
       compra: admin ? resumoCompras(g, u) : null,
       outrosAdmins: lista(g.admins).filter(function (e) { return e !== u.email; }).length,
       sorteioTravado: sorteioTravado(g),
@@ -1038,7 +1053,7 @@ var Core = (function () {
     r.aguardando = cs.filter(function (c) { return c.status === 'pedido' || c.status === 'liberado'; }).length;
     if (ehSuper(u.email)) { var tc = todasCompras(g.id); r.historico = tc.length; r.devolucoes = tc.filter(devolucaoPendente).length; }
     // quantidade de escolhas: visível ao mestre sempre e aos demais administradores a partir do dia da revelação
-    r.abracoAtiva = g.abracoAtivo === 'sim'; r.abracoValor = g.abracoValor || ''; r.abracoLimite = limiteCompras(g, 'abraco'); r.abracoOptOut = g.abracoOptOut === 'sim';
+    r.abracoAtiva = g.abracoAtivo === 'sim'; r.abracoValor = g.abracoValor || ''; r.abracoLimite = limiteCompras(g, 'abraco'); r.abracoOptOut = g.abracoOptOut === 'sim'; r.compraOptOut = g.compraOptOut === 'sim';
     if (ehSuper(u.email) || diaRevelacaoChegou(g)) {
       var t = contarCompras(g);
       r.feitas = t.feitas; r.pagas = t.pagas; r.abracos = t.abracos; r.abracosPagos = t.abracosPagos; r.arrecadado = t.arrecadado;
@@ -1494,13 +1509,14 @@ var Core = (function () {
     ['nome', 'valorMinimo', 'dataRevelacao', 'horaRevelacao', 'localNome', 'localEndereco'].forEach(function (k) { if (d[k] != null) p[k] = String(d[k]).trim().substr(0, 300); });
     if (p.nome === '') erro('O grupo precisa de um nome.');
     if (p.dataRevelacao && !/^\d{4}-\d{2}-\d{2}$/.test(p.dataRevelacao)) erro('Data de revelação inválida.');
-    if (d.logo != null) { if (String(d.logo).length > 48000) erro('Imagem muito grande.'); p.logo = d.logo; }
+    if (d.logo != null && !/^f:/.test(String(d.logo))) { if (String(d.logo).length > 48000) erro('Imagem muito grande.'); p.logo = d.logo; }
     ['compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix'].forEach(function (k) { if (d[k] != null) p[k] = String(d[k]).trim().substr(0, 200); });
     if (d.telefoneLiberado != null) p.telefoneLiberado = d.telefoneLiberado ? 'sim' : '';
     if (d.compraLimite != null) { var lim = parseInt(d.compraLimite, 10); p.compraLimite = lim > 0 ? String(lim) : '3'; }
     if (d.abracoValor != null) p.abracoValor = String(d.abracoValor).trim().substr(0, 30);
     if (d.abracoLimite != null) { var la = parseInt(d.abracoLimite, 10); p.abracoLimite = la > 0 ? String(la) : '1'; }
     if (d.abracoOptOut != null) p.abracoOptOut = d.abracoOptOut ? 'sim' : '';
+    if (d.compraOptOut != null) p.compraOptOut = d.compraOptOut ? 'sim' : '';
     if (d.abracoAtivo != null) {
       if (d.abracoAtivo && x.g.sorteioEm) erro('O sorteio já foi feito; não é possível ativar o Abraço Garantido agora.');
       if (d.abracoAtivo && !String((d.compraPix != null ? d.compraPix : x.g.compraPix) || '').trim()) erro('Informe a chave PIX para ativar o Abraço Garantido.');
@@ -1711,7 +1727,7 @@ var Core = (function () {
       var ant = todasCompras(g.id).filter(function (c) { return c.tipo === 'escolha' && c.comprador === u.email && encerrada(c.status); }).sort(function (p, q) { return (p.encerradoEm || p.pedidoEm) < (q.encerradoEm || q.pedidoEm) ? 1 : -1; })[0];
       if (ant) r.anterior = { motivo: ant.motivo, devolvido: !!ant.devolvidoEm, devolvidoEm: ant.devolvidoEm, semPagamento: ant.pagamento === 'nao-recebido' };
     }
-    if (minha && minha.status === 'liberado') r.opcoes = membros(g.id).filter(function (m) { return m.email !== u.email; }).map(function (m) { var pu = usuario(m.email) || {}; return { id: Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12), nome: pu.nome || '' }; }).sort(function (p, q) { return p.nome.localeCompare(q.nome, 'pt-BR'); });
+    if (minha && minha.status === 'liberado') r.opcoes = membros(g.id).filter(function (m) { return m.email !== u.email && !foraDaEscolha(g, m); }).map(function (m) { var pu = usuario(m.email) || {}; return { id: Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12), nome: pu.nome || '' }; }).sort(function (p, q) { return p.nome.localeCompare(q.nome, 'pt-BR'); });
     return r;
   };
 
@@ -1749,7 +1765,10 @@ var Core = (function () {
   api.preferenciaAbraco = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
     if (!x.m) erro('Você não participa deste grupo.');
-    T('Membros').update(function (m) { return m.grupoId === x.g.id && m.email === u.email; }, { semAbraco: a.sem ? 'sim' : '' });
+    var p2 = {};
+    if (a.sem != null) p2.semAbraco = a.sem ? 'sim' : '';
+    if (a.semEscolha != null) p2.semEscolha = a.semEscolha ? 'sim' : '';
+    T('Membros').update(function (m) { return m.grupoId === x.g.id && m.email === u.email; }, p2);
     return api.grupo(a);
   };
 
@@ -1876,7 +1895,7 @@ var Core = (function () {
       localNome: g.localNome, localEndereco: g.localEndereco, auditor: g.auditor, admins: g.admins, sorteioEm: '', sorteioCodigo: '', trapaca: '', trapacaNota: '',
       criadoPor: u.email, criadoEm: agoraIso, compraAtiva: '', compraValor: g.compraValor, compraBanco: g.compraBanco, compraAgencia: g.compraAgencia, compraConta: g.compraConta,
       compraTitular: g.compraTitular, compraPix: g.compraPix, compraLimite: g.compraLimite, edicaoDe: g.id,
-      abracoAtivo: '', abracoValor: g.abracoValor, abracoLimite: g.abracoLimite, abracoOptOut: g.abracoOptOut });
+      abracoAtivo: '', abracoValor: g.abracoValor, abracoLimite: g.abracoLimite, abracoOptOut: g.abracoOptOut, compraOptOut: g.compraOptOut });
     membros(g.id).forEach(function (m) {
       // todos precisam confirmar de novo (e-mail pode ter mudado; alguém pode não querer participar). Só quem cria já fica confirmado.
       T('Membros').insert({ grupoId: id, email: m.email, desejos: '', confirmado: m.email === u.email ? agoraIso : '', tokenConvite: '', conviteEnviadoEm: '', incluidoEm: agoraIso, sorteioEmail: '', sorteioRecebidoEm: '', tokenRecebido: '' });
@@ -1915,13 +1934,48 @@ var Core = (function () {
     return api.grupo(a);
   };
 
+  /* ---------- velocidade: abertura em uma só consulta ---------- */
+  api.pacote = function (a) {
+    var r = { eu: api.eu(a) };
+    if (a.grupoId && r.eu.grupos.some(function (g) { return g.id === a.grupoId; })) {
+      r.grupo = api.grupo(a);
+      if (r.grupo.souMembro) {
+        try { r.meuAmigo = api.meuAmigo(a); } catch (e) { }
+        try { r.conversas = api.conversas(a); } catch (e) { }
+        try { r.mural = api.mural(a); } catch (e) { }
+      }
+    }
+    return r;
+  };
+  /* Fotos e logos viajam como referências curtas ("f:..."); o aparelho baixa cada imagem uma única vez */
+  function refFoto(v) {
+    var n = v.length, passo = Math.max(1, Math.floor(n / 4000)), h = 2166136261;
+    for (var i = 0; i < n; i += passo) { h ^= v.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return 'f:' + h.toString(36) + n.toString(36);
+  }
+  function trocarFotos(o) {
+    if (typeof o === 'string') return (o.length > 300 && o.indexOf('data:image/') === 0) ? refFoto(o) : o;
+    if (Array.isArray(o)) return o.map(trocarFotos);
+    if (o && typeof o === 'object') { var c = {}; for (var k in o) c[k] = trocarFotos(o[k]); return c; }
+    return o;
+  }
+  api.fotos = function (a) {
+    sessao(a.token);
+    var pedidas = {}, r = {};
+    (a.refs || []).slice(0, 80).forEach(function (x) { pedidas[x] = 1; });
+    function ver(v) { if (v && v.length > 300 && v.indexOf('data:image/') === 0) { var k = refFoto(v); if (pedidas[k]) r[k] = v; } }
+    T('Usuarios').all().forEach(function (u) { ver(u.foto); });
+    T('Grupos').all().forEach(function (g) { ver(g.logo); });
+    return r;
+  };
+
   /* ---------- despachante ---------- */
   function chamar(nome, args) {
     if (!api.hasOwnProperty(nome)) return { erro: 'Função desconhecida.' };
     try {
-      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes)$/.test(nome);
+      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos)$/.test(nome);
       var r = escrita && P.travar ? P.travar(function () { return api[nome](args || {}); }) : api[nome](args || {});
-      return { ok: r };
+      return { ok: nome === 'fotos' ? r : trocarFotos(r) };
     } catch (e) {
       if (!e.amigavel && P.registrarErro) P.registrarErro(nome, e);
       return { erro: e.amigavel ? e.message : 'Erro inesperado: ' + e.message };
@@ -2057,11 +2111,16 @@ function lsSet(k,v){
   if(VIA_PORTAL){ if(v==null) delete MEM[k]; else MEM[k]=String(v); try{ window.top.postMessage({flecha:'salvar', chave:k, valor:v==null?null:String(v)}, PORTAL); }catch(e){} return; }
   try{ if(v==null) localStorage.removeItem(k); else localStorage.setItem(k,v); }catch(e){}
 }
+/* depois que o teclado fecha, pede à página de entrada para recolocar a tela no lugar (evita toque deslocado no iPhone) */
+document.addEventListener('focusout', function(){ if(VIA_PORTAL) setTimeout(function(){ try{ window.top.postMessage({flecha:'teclado'}, PORTAL); }catch(e){} }, 80); });
 function conectarPortal(pronto){
   if(!PORTAL || window.top===window.self) return pronto();
   var feito=false;
   function fim(){ if(feito) return; feito=true; window.removeEventListener('message', ouvir); pronto(); }
-  function ouvir(ev){ if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='dados') return; VIA_PORTAL=true; MEM=ev.data.dados||{}; fim(); }
+  function ouvir(ev){ if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='dados') return; VIA_PORTAL=true; MEM=ev.data.dados||{};
+    // a página de entrada informa a altura da barrinha do iPhone: a barra de abas passa por trás dela
+    var mg=ev.data.margens; if(mg && mg.base>0) document.documentElement.style.setProperty('--sab', Math.max(6, Math.round(mg.base-20))+'px');
+    fim(); }
   window.addEventListener('message', ouvir);
   try{ window.top.postMessage({flecha:'pedir'}, PORTAL); }catch(e){}
   setTimeout(fim, 1200);
@@ -2082,6 +2141,8 @@ var I = {
   grupos:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
   cadeado:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   enviar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 12 20 4l-4 16-4-7z"/></svg>',
+  olho:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  olhoFechado:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
   ajuda:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 3.8"/><circle cx="12" cy="17.2" r=".6" fill="currentColor"/></svg>',
   mapa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>'
 };
@@ -2113,7 +2174,25 @@ function quando(iso){
   return mesmoDia? hh : ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+hh;
 }
 function iniciais(n){ return String(n||'?').trim().split(/\s+/).slice(0,2).map(function(x){return x[0];}).join('').toUpperCase(); }
-function avatar(foto, nome, cls){ return foto? '<img class="av '+(cls||'')+'" src="'+esc(foto)+'" alt="">' : '<span class="av '+(cls||'')+'">'+esc(iniciais(nome))+'</span>'; }
+/* Fotos e logos chegam do servidor como referências ("f:..."): cada imagem é baixada uma vez e guardada no aparelho */
+var FOTOS={}, fotosPedidas={}, tFotos=null, tGuardaFotos=null, VAZIO='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+function carregarFotosGuardadas(){ try{ FOTOS=JSON.parse(lsGet('flecha-fotos')||'{}')||{}; }catch(e){ FOTOS={}; } }
+function ehRef(f){ return typeof f==='string' && f.indexOf('f:')===0; }
+function srcFoto(f){ if(!f) return ''; if(!ehRef(f)) return f; if(FOTOS[f]) return FOTOS[f]; pedirFoto(f); return VAZIO; }
+function imgAttrs(f){ return 'src="'+esc(srcFoto(f))+'"'+(ehRef(f) && !FOTOS[f]? ' data-fref="'+esc(f)+'"' : ''); }
+function pedirFoto(ref){
+  if(fotosPedidas[ref]) return; fotosPedidas[ref]=1;
+  clearTimeout(tFotos); tFotos=setTimeout(function(){
+    var refs=Object.keys(fotosPedidas).filter(function(k){ return fotosPedidas[k]===1; }); if(!refs.length) return;
+    refs.forEach(function(k){ fotosPedidas[k]=2; });
+    chamar('fotos',{refs:refs}).then(function(m){
+      for(var k in m) FOTOS[k]=m[k];
+      $$('[data-fref]').forEach(function(el){ var r=el.getAttribute('data-fref'); if(FOTOS[r]){ el.src=FOTOS[r]; el.removeAttribute('data-fref'); } });
+      clearTimeout(tGuardaFotos); tGuardaFotos=setTimeout(function(){ var j=JSON.stringify(FOTOS); if(j.length<2500000) lsSet('flecha-fotos', j); }, 1500);
+    }).catch(function(){ refs.forEach(function(k){ delete fotosPedidas[k]; }); });
+  }, 40);
+}
+function avatar(foto, nome, cls){ return foto? '<img class="av '+(cls||'')+'" '+imgAttrs(foto)+' alt="">' : '<span class="av '+(cls||'')+'">'+esc(iniciais(nome))+'</span>'; }
 function avatarIcone(ic, cls){ return '<span class="av anon '+(cls||'')+'">'+I[ic]+'</span>'; }
 function moeda(v){ v=String(v||'').trim(); if(!v) return 'a definir'; return 'R$ '+v.replace(/^R\$\s*/,''); }
 
@@ -2212,8 +2291,18 @@ function fio(box, cfg){
   }
   desenhar();
 }
+/* Olho para mostrar/ocultar a senha (todos os campos de senha) */
+function olhosSenha(raiz){
+  $$('input[type="password"]:not([data-olho])', raiz||document).forEach(function(inp){
+    inp.setAttribute('data-olho','1');
+    var w=document.createElement('span'); w.className='senha-wrap'; inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+    var b=document.createElement('button'); b.type='button'; b.className='olho'; b.setAttribute('aria-label','Mostrar senha'); b.innerHTML=I.olho; w.appendChild(b);
+    b.onclick=function(){ var ver=inp.type==='password'; inp.type=ver?'text':'password'; b.innerHTML=ver?I.olhoFechado:I.olho; b.setAttribute('aria-label', ver?'Ocultar senha':'Mostrar senha'); inp.focus(); };
+  });
+}
+try{ new MutationObserver(function(){ olhosSenha(); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
 /* Foto em tamanho grande */
-function verFoto(foto, nome){ if(!foto) return; modal('<div class="foto-grande"><img src="'+esc(foto)+'" alt="Foto de '+esc(nome)+'"><h2>'+esc(nome)+'</h2></div><button class="btn sec" data-fechar>Fechar</button>'); }
+function verFoto(foto, nome){ if(!foto) return; modal('<div class="foto-grande"><img '+imgAttrs(foto)+' alt="Foto de '+esc(nome)+'"><h2>'+esc(nome)+'</h2></div><button class="btn sec" data-fechar>Fechar</button>'); }
 function carregando(){ return '<div class="carregando"><div class="giro" role="status" aria-label="Carregando"></div></div>'; }
 function ocupado(btn, fn){ if(btn.disabled) return; var t=btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="giro" style="width:16px;height:16px;border-width:2px"></span>'; return Promise.resolve().then(fn).catch(falha).then(function(r){ btn.disabled=false; btn.innerHTML=t; return r; }); }
 
@@ -2312,7 +2401,7 @@ function telaPedidoGrupo(){
 
 function entrou(r){ S.token=r.token; lsSet('flecha-token', r.token); return iniciar(); }
 function sair(silencioso){
-  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); limparCache();
+  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); limparCache(); lsSet('flecha-cache', null);
   if(t && !silencioso) chamar('sair',{token:t}).catch(function(){});
   telaLogin(silencioso? 'Sua sessão expirou. Entre novamente.' : '');
 }
@@ -2362,14 +2451,58 @@ function telaLink(p){
 }
 
 /* ---------- início após login ---------- */
+function lerCacheGuardado(){ try{ var c=JSON.parse(lsGet('flecha-cache')||'null'); return c && c.v===1? c : null; }catch(e){ return null; } }
+var tGuardaCache=null;
+function guardarCache(){
+  clearTimeout(tGuardaCache); tGuardaCache=setTimeout(function(){
+    if(!S.token || !S.gid || !S.g || !S.eu) return;
+    var abas={}; Object.keys(CACHE).forEach(function(k){ if(k.split(':')[1]===S.gid) abas[k]=CACHE[k].d; });
+    var j=JSON.stringify({v:1, gid:S.gid, eu:S.eu, g:S.g, abas:abas}); if(j.length<1500000) lsSet('flecha-cache', j);
+  }, 1200);
+}
+function aplicarPacote(r, gid){
+  S.eu=r.eu;
+  if(r.meuAmigo) CACHE['amigo:'+gid]={d:r.meuAmigo, j:JSON.stringify(r.meuAmigo)};
+  if(r.conversas){ CACHE['conv:'+gid]={d:r.conversas, j:JSON.stringify(r.conversas)}; }
+  if(r.mural) CACHE['mural:'+gid]={d:r.mural, j:JSON.stringify(r.mural)};
+}
+function prepararAba(g){
+  if(['admin'].indexOf(S.aba)>=0 && !g.souAdmin) S.aba='amigo'; if(S.aba==='auditor' && !g.souAuditor) S.aba='amigo';
+  if(g.suporte && ['amigo','conversas','mural'].indexOf(S.aba)>=0) S.aba='admin';
+}
+function grupoAberto(g){
+  if(g.boasVindas && g.boasVindas.length && !window.__SEM_BOAS_VINDAS__) mostrarBoasVindas(g.boasVindas);
+  if(S.eu && S.eu.pendencias && S.eu.pendencias.total) setTimeout(function(){ aviso('Há '+S.eu.pendencias.total+' pendência(s) aguardando você como administrador geral.'); }, 900);
+  preCarregarAbas(); guardarCache();
+}
 function iniciar(){
+  var c=lerCacheGuardado();
+  // abre na hora com o que ficou guardada da última vez e atualiza em seguida
+  if(c && S.gid && c.gid===S.gid && c.eu && c.g){
+    S.eu=c.eu; S.g=c.g; CACHE={}; Object.keys(c.abas||{}).forEach(function(k){ CACHE[k]={d:c.abas[k], j:JSON.stringify(c.abas[k])}; });
+    prepararAba(S.g); desenharGrupo();
+    var gid=S.gid, seq=seqAba;
+    chamar('pacote',{grupoId:gid}).then(function(r){
+      if(S.gid!==gid) return;
+      if(!r.grupo){ S.gid=null; lsSet('flecha-grupo',null); return iniciar(); }
+      var mudouAba = JSON.stringify(r[{amigo:'meuAmigo',conversas:'conversas',mural:'mural'}[S.aba]]||null) !== JSON.stringify(((CACHE[{amigo:'amigo',conversas:'conv',mural:'mural'}[S.aba]+':'+gid])||{}).d||null);
+      var mudouGrupo = JSON.stringify(r.grupo)!==JSON.stringify(S.g);
+      aplicarPacote(r, gid); S.g=r.grupo; prepararAba(S.g);
+      if(mudouGrupo){ desenharCabecalho(); desenharAbas(); }
+      if((mudouAba || (mudouGrupo && ['participantes','admin','amigo'].indexOf(S.aba)>=0)) && seq===seqAba && !mexeu && !document.querySelector('.modal-fundo') && !S.conv){
+        var rev=$('#bil-r'); if(!(rev && !rev.hidden)) mostrarAba(S.aba);
+      }
+      grupoAberto(S.g);
+    }).catch(function(e){ if(S.token) falha(e); });
+    return Promise.resolve();
+  }
   app.innerHTML=carregando();
-  return chamar('eu').then(function(eu){
-    S.eu=eu;
-    var ids=eu.grupos.map(function(g){return g.id;});
-    if(eu.pendencias && eu.pendencias.total) setTimeout(function(){ aviso('Há '+eu.pendencias.total+' pendência(s) aguardando você como administrador geral.'); }, 900);
-    if(S.gid && ids.indexOf(S.gid)>=0) return abrirGrupo(S.gid);
+  return chamar('pacote',{grupoId:S.gid||''}).then(function(r){
+    S.eu=r.eu;
+    if(r.grupo){ aplicarPacote(r, S.gid); S.g=r.grupo; prepararAba(S.g); desenharGrupo(); grupoAberto(S.g); return; }
+    var eu=r.eu;
     if(eu.grupos.length===1) return abrirGrupo(eu.grupos[0].id);
+    if(eu.pendencias && eu.pendencias.total) setTimeout(function(){ aviso('Há '+eu.pendencias.total+' pendência(s) aguardando você como administrador geral.'); }, 900);
     telaGrupos();
   }).catch(function(e){ if(S.token) falha(e); });
 }
@@ -2387,7 +2520,7 @@ function telaGrupos(){
   var eu=S.eu, meus=eu.grupos.filter(function(g){ return g.membro; });
   app.innerHTML='<header class="topo"><div class="wrap"><div class="logo">'+marca('#f3ead2')+'</div><div class="tit"><h1>Flecha Secreta</h1><div class="linha2">Olá, '+esc(eu.nome)+(eu.superadmin?' · administrador geral':'')+'</div></div><button class="icobtn" id="g-perfil" aria-label="Meu perfil">'+I.eu+'</button></div></header>'+
   '<main class="wrap">'+(eu.pendencias && eu.pendencias.total? '<div class="faixa aviso-f" style="margin-top:16px"><div><b>Aguardando você:</b> '+esc(textoPendencias(eu.pendencias))+'. Veja abaixo'+(eu.pendencias.compras||eu.pendencias.devolucoes?' e, para as compras de escolha, na aba Admin do grupo':'')+'.</div></div>':'')+'<div class="secao"><h2>Meus grupos</h2><div class="lista">'+
-    (meus.length? meus.map(function(g){ return '<button class="item" data-g="'+esc(g.id)+'">'+(g.logo?'<img class="av" src="'+esc(g.logo)+'" alt="">':'<span class="av anon">'+marca('#f3ead2',false)+'</span>')+'<div class="txt"><div class="t1">'+esc(g.nome)+(g.admin?' <span class="chip ouro">admin</span>':'')+'</div><div class="t2">'+g.participantes+' participantes · revelação '+dataBR(g.dataRevelacao)+'</div></div></button>'; }).join('') : '<div class="item">Você ainda não participa de nenhum grupo.</div>')+
+    (meus.length? meus.map(function(g){ return '<button class="item" data-g="'+esc(g.id)+'">'+(g.logo?'<img class="av" '+imgAttrs(g.logo)+' alt="">':'<span class="av anon">'+marca('#f3ead2',false)+'</span>')+'<div class="txt"><div class="t1">'+esc(g.nome)+(g.admin?' <span class="chip ouro">admin</span>':'')+'</div><div class="t2">'+g.participantes+' participantes · revelação '+dataBR(g.dataRevelacao)+'</div></div></button>'; }).join('') : '<div class="item">Você ainda não participa de nenhum grupo.</div>')+
   '</div></div>'+(eu.superadmin? '<div id="painel-geral">'+carregando()+'</div>' : '')+'</main>';
   $$('[data-g]').forEach(function(b){ b.onclick=function(){ abrirGrupo(b.dataset.g); }; });
   $('#g-perfil').onclick=function(){ S.g=null; telaPerfil(); };
@@ -2406,7 +2539,7 @@ function desenharPainelGeral(pg){
     '<button class="btn">Enviar convite</button></form></div>'+
   '<div class="secao"><h2>Todos os grupos ('+pg.grupos.length+')</h2><div class="lista">'+pg.grupos.map(function(g){
     var sit = g.sorteado? '<span class="chip ok">sorteado</span>' : '<span class="chip">sorteio pendente</span>';
-    return '<button class="item" data-gs="'+esc(g.id)+'">'+(g.logo?'<img class="av" src="'+esc(g.logo)+'" alt="">':'<span class="av anon">'+marca('#f3ead2',false)+'</span>')+'<div class="txt"><div class="t1" style="flex-wrap:wrap">'+esc(g.nome)+sit+(g.souMembro?'':' <span class="chip">suporte</span>')+(g.comprasPedido?' <span class="chip aviso">'+g.comprasPedido+' compra(s) a conferir</span>':'')+(g.devolucoes?' <span class="chip erro">'+g.devolucoes+' devolução(ões)</span>':'')+'</div><div class="t2" style="white-space:normal">Admin: '+esc(g.admins.join(', ')||'—')+' · '+g.confirmados+'/'+g.participantes+' confirmados · revelação '+dataBR(g.dataRevelacao)+'</div></div></button>';
+    return '<button class="item" data-gs="'+esc(g.id)+'">'+(g.logo?'<img class="av" '+imgAttrs(g.logo)+' alt="">':'<span class="av anon">'+marca('#f3ead2',false)+'</span>')+'<div class="txt"><div class="t1" style="flex-wrap:wrap">'+esc(g.nome)+sit+(g.souMembro?'':' <span class="chip">suporte</span>')+(g.comprasPedido?' <span class="chip aviso">'+g.comprasPedido+' compra(s) a conferir</span>':'')+(g.devolucoes?' <span class="chip erro">'+g.devolucoes+' devolução(ões)</span>':'')+'</div><div class="t2" style="white-space:normal">Admin: '+esc(g.admins.join(', ')||'—')+' · '+g.confirmados+'/'+g.participantes+' confirmados · revelação '+dataBR(g.dataRevelacao)+'</div></div></button>';
   }).join('')+'</div><div class="muted" style="font-size:12.5px">Nos grupos marcados como “suporte”, você acessa só a aba Admin e a lista de participantes: o sorteio, as conversas e o mural continuam em sigilo.</div></div>'+
   '<div class="secao"><details class="cartao"><summary style="cursor:pointer;font-weight:600">Criar um grupo do qual eu também participo</summary><form class="pilha" id="g-novo" style="margin-top:12px"><label class="campo">Nome do grupo<input class="inp" id="g-nome" placeholder="Ex.: Amigos do Trabalho"></label><button class="btn sec">Criar grupo</button></form></details></div>';
   $('#cl-f').onsubmit=function(ev){ ev.preventDefault(); var b=this.querySelector('.btn');
@@ -2433,13 +2566,11 @@ function desenharPainelGeral(pg){
 function abrirGrupo(gid){
   S.gid=gid; lsSet('flecha-grupo', gid);
   app.innerHTML=carregando();
-  return chamar('grupo',{grupoId:gid}).then(function(g){ S.g=g; if(['admin'].indexOf(S.aba)>=0 && !g.souAdmin) S.aba='amigo'; if(S.aba==='auditor' && !g.souAuditor) S.aba='amigo';
-    if(g.suporte && ['amigo','conversas','mural'].indexOf(S.aba)>=0) S.aba='admin'; desenharGrupo();
-    if(g.boasVindas && g.boasVindas.length && !window.__SEM_BOAS_VINDAS__) mostrarBoasVindas(g.boasVindas);
-    preCarregarAbas(); })
+  return chamar('pacote',{grupoId:gid}).then(function(r){ if(!r.grupo) throw new Error('Grupo não encontrado.');
+    aplicarPacote(r, gid); var g=r.grupo; S.g=g; prepararAba(g); desenharGrupo(); grupoAberto(g); })
     .catch(function(e){ falha(e); S.gid=null; lsSet('flecha-grupo',null); telaGrupos(); });
 }
-function recarregarGrupo(){ return chamar('grupo',{grupoId:S.gid}).then(function(g){ S.g=g; desenharCabecalho(); }); }
+function recarregarGrupo(){ return chamar('grupo',{grupoId:S.gid}).then(function(g){ S.g=g; desenharCabecalho(); guardarCache(); }); }
 
 /* ---------- velocidade: cada aba abre na hora com o que já foi carregado e se atualiza em segundo plano ---------- */
 var CACHE={}, seqAba=0, mexeu=false, tNaoLidas=null;
@@ -2448,7 +2579,7 @@ function usarCache(ch, nome, args, desenhar, podeAtualizar){
   var seq=seqAba, em=CACHE[ch];
   if(em) desenhar(em.d, true);
   return chamar(nome, args).then(function(d){
-    var j=JSON.stringify(d), mudou=!em || em.j!==j; CACHE[ch]={d:d, j:j};
+    var j=JSON.stringify(d), mudou=!em || em.j!==j; CACHE[ch]={d:d, j:j}; if(mudou) guardarCache();
     if(seq!==seqAba) return;
     if(!em) return desenhar(d, false);
     if(mudou && !mexeu && !document.querySelector('.modal-fundo') && (!podeAtualizar || podeAtualizar())) desenhar(d, false);
@@ -2489,7 +2620,7 @@ function desenharCabecalho(){
   var multi = S.eu && (S.eu.grupos.length>1 || S.eu.superadmin);
   var pend = S.eu && S.eu.pendencias && S.eu.pendencias.total;
   t.innerHTML='<div class="wrap">'+(multi?'<button class="icobtn" id="t-grupos" aria-label="Meus grupos'+(pend?' (há pendências)':'')+'" style="position:relative">'+I.grupos+(pend?'<i class="bolinha" style="position:absolute;top:4px;right:4px;width:10px;height:10px;border-radius:50%;background:var(--palha);border:2px solid var(--mata)"></i>':'')+'</button>':'')+
-    '<div class="logo">'+(g.logo?'<img src="'+esc(g.logo)+'" alt="Logo do grupo">':marca('#f3ead2'))+'</div>'+
+    '<div class="logo">'+(g.logo?'<img '+imgAttrs(g.logo)+' alt="Logo do grupo">':marca('#f3ead2'))+'</div>'+
     '<div class="tit"><h1>'+esc(g.nome)+'</h1><div class="linha2">'+
       (g.auditor? '<span class="auditor-tag">'+avatar(g.auditor.foto,g.auditor.nome)+'Auditor: '+esc(g.auditor.nome)+'</span>' : '<span>Auditor a definir</span>')+
       '<span>'+g.participantes.length+' participantes</span>'+(g.suporte?'<span class="auditor-tag" style="padding:1px 9px">modo suporte</span>':'')+'</div></div></div>';
@@ -2657,7 +2788,7 @@ function abaConversas(c){
     var h='<div class="secao"><div class="linha-acoes" style="justify-content:space-between"><h2>Conversas</h2><button class="btn peq" id="cv-nova">'+I.balao+'Nova mensagem</button></div>';
     if(!S.g.sorteado) h+='<div class="faixa info">Depois do sorteio aparecem aqui duas conversas especiais: com o seu amigo secreto (ele não sabe que é você) e com quem tirou você (você não sabe quem é).</div>';
     h+= cs.length? '<div class="lista">'+cs.map(function(k){
-      var av = k.foto? '<img class="av" src="'+esc(k.foto)+'" alt="">' : (k.icone==='presente'||k.icone==='mascara')? avatarIcone(k.icone) : avatar('',k.titulo);
+      var av = k.foto? '<img class="av" '+imgAttrs(k.foto)+' alt="">' : (k.icone==='presente'||k.icone==='mascara')? avatarIcone(k.icone) : avatar('',k.titulo);
       return '<button class="item" data-c="'+esc(k.id)+'">'+av+'<div class="txt"><div class="t1">'+(k.tipo==='amigo'&&k.ordem===0?'<span class="chip ouro">meu amigo</span>':'')+esc(k.titulo)+'</div><div class="t2">'+(k.ultima? (k.ultima.minha?'Você: ':'')+esc(k.ultima.texto) : esc(k.subtitulo))+'</div></div>'+(k.ultima?'<span class="hora">'+quando(k.ultima.em)+'</span>':'')+(naoLida(k)?'<span class="ponto" aria-label="não lida"></span>':'')+'</button>';
     }).join('')+'</div>' : '<div class="cartao muted">Nenhuma conversa ainda. Toque em “Nova mensagem” para escrever para alguém, de forma aberta ou anônima.</div>';
     h+='</div>';
@@ -2862,7 +2993,7 @@ function abaAjuda(c){
         'Antes do sorteio, mostra a data, o horário, o local e o valor mínimo do presente.',
         'Depois do sorteio, toque em <b>Toque para ver</b> para descobrir quem você tirou (confira se ninguém está olhando a tela!). Aparecem também as sugestões de presente dessa pessoa.',
         'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você.'
-      ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'] : [])))+
+      ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
       bloco('balao','Conversas', lst([
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
         'Em <b>Nova mensagem</b>, escreva para qualquer pessoa do grupo, com seu nome ou anonimamente.',
@@ -2913,7 +3044,7 @@ function abaAjuda(c){
     ]), ' class="papel-ajuda"')+
     bloco('escudo','Dados do grupo e compra de escolha', lst([
       'Em <b>Dados do grupo</b>: nome, foto ou logo, valor mínimo, data e horário, local e endereço, auditor e se os participantes podem informar o celular.',
-      '<b>Compra de escolha:</b> ative só se o grupo concordar. Defina valor, limite e dados do PIX. O administrador geral confirma os pagamentos, e ninguém vê quem cada comprador escolheu.',
+      '<b>Compra de escolha:</b> ative só se o grupo concordar. Defina valor, limite e dados do PIX. O administrador geral confirma os pagamentos, e ninguém vê quem cada comprador escolheu. Você pode permitir que os participantes fiquem de fora pelo Perfil.',
       '<b>Abraço Garantido:</b> na mesma seção, ative para permitir que alguém pague para escolher um par de outras duas pessoas. Tem valor e limite próprios e usa o mesmo PIX. Você pode permitir que os participantes fiquem de fora pelo Perfil.',
       'Depois da revelação, crie a <b>edição do próximo ano</b> com os mesmos participantes.'
     ]), ' class="papel-ajuda"')+
@@ -2950,7 +3081,13 @@ function telaPerfil(c){
     '<div class="muted" style="font-size:13px">O celular fica visível apenas para os administradores.</div>'+
     '<button class="btn" id="pf-ok">Salvar perfil</button></div></div>'+
     (S.g && S.g.souMembro && !S.g.suporte && !S.g.souAdmin && !semGrupo? '<div class="secao"><h2>Fale com os administradores</h2><div class="cartao pilha" id="pf-recados">'+carregando()+'</div></div>' : '')+
-    (S.g && S.g.souMembro && !semGrupo && S.g.abracoAtivo && S.g.abracoOptOut? '<div class="secao"><h2>Abraço Garantido</h2><div class="cartao pilha"><label style="display:flex;gap:10px;align-items:flex-start;font-weight:600"><input type="checkbox" id="pf-semab" '+(S.g.semAbraco?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> Não quero ser incluído(a) em um Abraço Garantido</label><div class="muted" style="font-size:13px">No Abraço Garantido, alguém paga para escolher quem vai tirar quem. Se marcar, ninguém poderá incluir você em um par. Só você vê esta opção, e ela vale para os próximos pedidos.</div></div></div>' : '')+
+    (function(){ var g=S.g; if(!g || !g.souMembro || semGrupo) return '';
+      var opE = g.compraAtiva && g.compraOptOut, opA = g.abracoAtivo && g.abracoOptOut; if(!opE && !opA) return '';
+      var lin=function(id, marcado, txt, exp){ return '<label style="display:flex;gap:10px;align-items:flex-start;font-weight:600"><input type="checkbox" id="'+id+'" '+(marcado?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> '+txt+'</label><div class="muted" style="font-size:13px;margin-top:-4px">'+exp+'</div>'; };
+      return '<div class="secao"><h2>'+(opE&&opA?'Compra de escolha e Abraço Garantido':opE?'Compra de escolha':'Abraço Garantido')+'</h2><div class="cartao pilha">'+
+        (opE? lin('pf-semesc', g.semEscolha, 'Não quero ser escolhido(a) na compra de escolha', 'Na compra de escolha, alguém paga para escolher quem vai tirar. Se marcar, ninguém poderá escolher você; você continua no sorteio normal.') : '')+
+        (opA? lin('pf-semab', g.semAbraco, 'Não quero ser incluído(a) em um Abraço Garantido', 'No Abraço Garantido, alguém paga para escolher quem vai tirar quem. Se marcar, ninguém poderá incluir você em um par.') : '')+
+        '<div class="muted" style="font-size:12.5px">Só você vê '+(opE&&opA?'estas opções':'esta opção')+'. Ninguém fica sabendo quem marcou, e vale para os próximos pedidos.</div></div></div>'; })()+
     '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
     '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
     '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s"><div class="grade2"><label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label></div><button class="btn sec">Trocar senha</button></form></div>'+
@@ -2963,7 +3100,10 @@ function telaPerfil(c){
   $('#pf-sair').onclick=function(){ sair(false); };
   desenharAvisos($('#pf-avisos'));
   desenharEmail($('#pf-email'));
-  var sab=$('#pf-semab'); if(sab) sab.onchange=function(){ var v=sab.checked; chamar('preferenciaAbraco',{grupoId:S.gid, sem:v}).then(function(g2){ S.g=g2; aviso(v?'Pronto: você não será incluído(a) em um Abraço Garantido.':'Pronto: você pode ser incluído(a) em um Abraço Garantido.'); }).catch(function(e){ sab.checked=!v; falha(e); }); };
+  function prefCompra(id, campo, msgSim, msgNao){ var el=$('#'+id); if(!el) return; el.onchange=function(){ var v=el.checked, d={grupoId:S.gid}; d[campo]=v;
+    chamar('preferenciaAbraco', d).then(function(g2){ S.g=g2; aviso(v?msgSim:msgNao); }).catch(function(e){ el.checked=!v; falha(e); }); }; }
+  prefCompra('pf-semab','sem','Pronto: você não será incluído(a) em um Abraço Garantido.','Pronto: você pode ser incluído(a) em um Abraço Garantido.');
+  prefCompra('pf-semesc','semEscolha','Pronto: ninguém poderá escolher você na compra de escolha.','Pronto: você pode ser escolhido(a) na compra de escolha.');
   var rc=$('#pf-recados'); if(rc) chamar('recados',{grupoId:S.gid}).then(function(d){ desenharRecados(rc, d); }).catch(function(){ rc.closest('.secao').remove(); });
 }
 /* Participante -> administradores do grupo (não é o administrador geral) */
@@ -3033,7 +3173,7 @@ function desenharAvisos(box){
 /* ---------- aba: auditor ---------- */
 function folhaHTML(f){
   var linhas=''; for(var i=1;i<=f.total;i++) linhas+='<tr><td class="n">'+i+'</td><td></td><td></td></tr>';
-  return '<div class="folha"><div class="cab"><div class="lg">'+(f.logo?'<img src="'+esc(f.logo)+'" alt="">':marca('#21402f','#c9973a'))+'</div><div style="flex:1;min-width:0"><h3>'+esc(f.grupo)+'</h3><div class="meta">Folha do Auditor · Revelação em '+dataBR(f.dataRevelacao)+(f.horaRevelacao?' às '+esc(f.horaRevelacao):'')+(f.localNome?' · '+esc(f.localNome):'')+(f.localEndereco?', '+esc(f.localEndereco):'')+'</div><div class="meta">Auditor: <b>'+esc(f.auditor||'________________')+'</b> · '+f.total+' participantes'+(f.codigo?' · código do sorteio '+esc(f.codigo):'')+'</div></div></div>'+
+  return '<div class="folha"><div class="cab"><div class="lg">'+(f.logo?'<img '+imgAttrs(f.logo)+' alt="">':marca('#21402f','#c9973a'))+'</div><div style="flex:1;min-width:0"><h3>'+esc(f.grupo)+'</h3><div class="meta">Folha do Auditor · Revelação em '+dataBR(f.dataRevelacao)+(f.horaRevelacao?' às '+esc(f.horaRevelacao):'')+(f.localNome?' · '+esc(f.localNome):'')+(f.localEndereco?', '+esc(f.localEndereco):'')+'</div><div class="meta">Auditor: <b>'+esc(f.auditor||'________________')+'</b> · '+f.total+' participantes'+(f.codigo?' · código do sorteio '+esc(f.codigo):'')+'</div></div></div>'+
     '<div class="dica">Anote na ordem da revelação: quem revela (participante) e quem ele tirou (amigo secreto). O próximo a revelar é sempre o amigo secreto anterior. Se o círculo voltar ao primeiro antes da última linha, houve troca!</div>'+
     '<table><thead><tr><th style="text-align:center">Nº</th><th>Participante</th><th>Amigo secreto</th></tr></thead><tbody>'+linhas+'</tbody></table>'+
     '<div class="rodape"><div>O círculo fechou antes do fim?<span class="caixa"></span>Não<span class="caixa"></span>Sim, na linha nº ____</div><div>Houve trapaça?<span class="caixa"></span>Não<span class="caixa"></span>Sim 😈</div><div style="grid-column:1/-1">Observações: ____________________________________________________________________________</div><div class="assin">Auditor</div><div class="assin">Data</div></div></div>';
@@ -3067,7 +3207,7 @@ function blocoTotaisCompras(t){
   return '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="rotulo">Escolhas compradas</div><div class="n">'+t.feitas+'</div>'+(t.temAbraco?'<div class="muted" style="font-size:12px">+ '+t.abracos+' Abraço(s) Garantido(s)</div>':'')+(t.pagas>t.feitas?'<div class="muted" style="font-size:12px">'+t.pagas+' pagas</div>':'')+'</div><div><div class="rotulo">Total arrecadado</div><div class="n" style="font-size:22px;padding-top:3px">'+(t.arrecadado?'R$ '+esc(t.arrecadado):'—')+'</div>'+(t.valor?'<div class="muted" style="font-size:12px">R$ '+esc(t.valor)+' por escolha</div>':'')+'</div></div>';
 }
 function resultadoHTML(r){
-  return '<div class="folha"><div class="cab"><div class="lg">'+(S.g.logo?'<img src="'+esc(S.g.logo)+'" alt="">':marca('#21402f','#c9973a'))+'</div><div><h3>'+esc(r.grupo)+'</h3><div class="meta">Resultado do sorteio · revelação em '+dataBR(r.dataRevelacao)+' · código '+esc(r.codigo)+'</div>'+(r.trapaca==='sim'?'<div class="meta"><b>Auditor registrou trapaça.</b> '+esc(r.trapacaNota||'')+'</div>':'')+(r.compras?'<div class="meta">Compras de escolha: <b>'+r.compras.feitas+'</b> escolha(s)'+(r.compras.temAbraco?' · Abraço Garantido: <b>'+r.compras.abracos+'</b>':'')+(r.compras.arrecadado?' · total arrecadado <b>R$ '+esc(r.compras.arrecadado)+'</b>':'')+'</div>':'')+'</div></div>'+
+  return '<div class="folha"><div class="cab"><div class="lg">'+(S.g.logo?'<img '+imgAttrs(S.g.logo)+' alt="">':marca('#21402f','#c9973a'))+'</div><div><h3>'+esc(r.grupo)+'</h3><div class="meta">Resultado do sorteio · revelação em '+dataBR(r.dataRevelacao)+' · código '+esc(r.codigo)+'</div>'+(r.trapaca==='sim'?'<div class="meta"><b>Auditor registrou trapaça.</b> '+esc(r.trapacaNota||'')+'</div>':'')+(r.compras?'<div class="meta">Compras de escolha: <b>'+r.compras.feitas+'</b> escolha(s)'+(r.compras.temAbraco?' · Abraço Garantido: <b>'+r.compras.abracos+'</b>':'')+(r.compras.arrecadado?' · total arrecadado <b>R$ '+esc(r.compras.arrecadado)+'</b>':'')+'</div>':'')+'</div></div>'+
     '<table><thead><tr><th style="text-align:center">Nº</th><th>Participante</th><th>Amigo secreto</th></tr></thead><tbody>'+r.lista.map(function(l){ return '<tr><td class="n">'+l.n+'</td><td>'+esc(l.participante)+'</td><td>'+esc(l.amigo)+'</td></tr>'; }).join('')+'</tbody></table>'+
     '<div class="dica">A lista está na ordem do círculo: cada amigo secreto é o participante da linha seguinte, e o último tirou o primeiro.</div></div>';
 }
@@ -3147,7 +3287,7 @@ function desenharAdmin(c){
   blocoCompraAdmin(g)+
   '</div><div data-sub="grupo"'+aba('grupo')+'>'+
   '<div class="secao"><h2>Dados do grupo</h2><form class="cartao pilha" id="ad-f">'+
-    '<div class="revelado"><div class="logo-prev" id="ad-logo">'+(g.logo?'<img src="'+esc(g.logo)+'" alt="">':marca('var(--mata-2)'))+'</div><div class="pilha" style="gap:6px"><label class="btn sec peq" style="cursor:pointer">Escolher logo ou foto do grupo<input type="file" accept="image/*" id="ad-logo-f" hidden></label>'+(g.logo?'<button type="button" class="link" id="ad-logo-x">Remover imagem</button>':'')+'<span class="muted" style="font-size:12.5px">Aparece no topo do app e na folha do auditor.</span></div></div>'+
+    '<div class="revelado"><div class="logo-prev" id="ad-logo">'+(g.logo?'<img '+imgAttrs(g.logo)+' alt="">':marca('var(--mata-2)'))+'</div><div class="pilha" style="gap:6px"><label class="btn sec peq" style="cursor:pointer">Escolher logo ou foto do grupo<input type="file" accept="image/*" id="ad-logo-f" hidden></label>'+(g.logo?'<button type="button" class="link" id="ad-logo-x">Remover imagem</button>':'')+'<span class="muted" style="font-size:12.5px">Aparece no topo do app e na folha do auditor.</span></div></div>'+
     '<label class="campo">Nome do grupo<input class="inp" id="ad-nome" value="'+esc(g.nome)+'"></label>'+
     '<div class="grade2"><label class="campo">Valor mínimo do presente (R$)<input class="inp" id="ad-valor" inputmode="decimal" value="'+esc(g.valorMinimo||'')+'" placeholder="100,00"></label>'+
     '<label class="campo">Auditor<select class="inp" id="ad-aud"><option value="">— escolher —</option>'+ps.map(function(p){ return '<option value="'+esc(p.email)+'"'+(p.auditor?' selected':'')+'>'+esc(p.nome)+'</option>'; }).join('')+'</select></label></div>'+
@@ -3191,6 +3331,8 @@ function ligarSubAbas(c){
     window.scrollTo(0,0); }; });
   if(window.__TESTE_TODAS_SUBABAS__) $$('[data-sub]',c).forEach(function(d){ d.hidden=false; });
   var atual=$('[data-sub-ir][aria-current="true"]',nav); if(atual) try{ nav.scrollLeft = atual.offsetLeft - 16; }catch(e){}
+  function indicarMais(){ nav.classList.toggle('mais', nav.scrollWidth - nav.clientWidth - nav.scrollLeft > 6); }
+  nav.addEventListener('scroll', indicarMais); setTimeout(indicarMais, 0); window.addEventListener('resize', indicarMais);
   var busca=$('#ad-busca',c), modo='todos';
   function filtrar(){ var q=(busca? busca.value : '').trim().toLowerCase(), n=0;
     $$('#ad-lista [data-p]',c).forEach(function(it){ var ok=(!q || it.dataset.busca.indexOf(q)>=0) && (modo==='todos' || it.dataset.pend); it.hidden=!ok; if(ok) n++; });
@@ -3247,6 +3389,7 @@ function blocoCompraAdmin(g){
       '<label class="campo">Chave PIX<input class="inp" id="cp-pix" value="'+esc(k.pix||'')+'"></label>'+
       '<label class="campo">Titular da conta<input class="inp" id="cp-tit" value="'+esc(k.titular||'')+'"></label>'+
       '<div class="grade2"><label class="campo">Banco<input class="inp" id="cp-banco" value="'+esc(k.banco||'')+'"></label><div class="grade2" style="gap:8px"><label class="campo">Agência<input class="inp" id="cp-ag" value="'+esc(k.agencia||'')+'"></label><label class="campo">Conta<input class="inp" id="cp-conta" value="'+esc(k.conta||'')+'"></label></div></div>'+
+      '<label style="display:flex;gap:10px;align-items:flex-start;font-weight:600;font-size:14px"><input type="checkbox" id="cp-optout" '+(k.compraOptOut?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> Permitir que participantes fiquem de fora da compra de escolha (opção no Perfil de cada um)</label>'+
       '<div class="rotulo" style="margin-top:6px">🤗 Abraço Garantido</div>'+
       '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="ab-ativa" '+(k.abracoAtiva?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes paguem para escolher quem vai tirar quem (um par de outras duas pessoas)</label>'+
       '<div class="muted" style="font-size:13px">Quem paga escolhe o par e não pode fazer parte dele. Ninguém fica sabendo quem pagou nem qual foi o par. Usa os mesmos dados de PIX acima.</div>'+
@@ -3258,7 +3401,7 @@ function blocoCompraAdmin(g){
 function ligarCompraAdmin(c){
   var f=$('#ad-cp'); if(f) f.onsubmit=function(ev){ ev.preventDefault();
     var d={compraAtiva:$('#cp-ativa').checked, compraValor:$('#cp-valor').value, compraLimite:$('#cp-lim').value, compraPix:$('#cp-pix').value, compraTitular:$('#cp-tit').value, compraBanco:$('#cp-banco').value, compraAgencia:$('#cp-ag').value, compraConta:$('#cp-conta').value,
-      abracoAtivo:$('#ab-ativa').checked, abracoValor:$('#ab-valor').value, abracoLimite:$('#ab-lim').value, abracoOptOut:$('#ab-optout').checked};
+      compraOptOut:$('#cp-optout').checked, abracoAtivo:$('#ab-ativa').checked, abracoValor:$('#ab-valor').value, abracoLimite:$('#ab-lim').value, abracoOptOut:$('#ab-optout').checked};
     ocupado(f.querySelector('.btn'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; aviso('Compras salvas.'); desenharAdmin(c); }); }); };
   var box=$('#ad-pedidos'); if(!box) return;
   function desenhar(ps){
@@ -3364,6 +3507,7 @@ window.FLECHA = { iniciar:iniciar, telaLink:telaLink, telaLogin:telaLogin, S:S, 
 var P0 = window.__PARAMS__ || {};
 app.innerHTML=carregando();
 conectarPortal(function(){
+  carregarFotosGuardadas();
   S.token=lsGet('flecha-token'); S.gid=lsGet('flecha-grupo'); S.aba=lsGet('flecha-aba')||'amigo'; S.subAdmin='';
   if(P0.acao==='pedir') telaPedidoGrupo();
   else if(P0.acao && P0.t) telaLink({acao:P0.acao, t:P0.t});
