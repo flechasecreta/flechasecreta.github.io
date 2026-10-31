@@ -112,6 +112,8 @@ textarea.inp{min-height:90px;resize:vertical}
 .topo .icobtn{background:none;border:0;color:var(--sobre-mata);padding:8px;border-radius:10px;cursor:pointer}
 .topo .icobtn:hover{background:var(--mata-2)}
 .topo .icobtn svg{width:22px;height:22px;display:block}
+.topo .sair-topo{display:grid;justify-items:center;gap:1px;flex:none;padding:6px 6px 4px}
+.topo .sair-topo span{font-size:10.5px;font-weight:600;opacity:.85;line-height:1}
 
 .faixa-info{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--linha);border:1px solid var(--linha);border-radius:var(--raio);overflow:hidden;margin-top:16px}
 .faixa-info>div{background:var(--cartao);padding:12px 14px;min-width:0}
@@ -342,7 +344,7 @@ var APP_NOME = 'Flecha Secreta';
 var APP_LEMA = 'o amigo secreto da sua turma';
 
 var TABELAS = {
-  Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira'],
+  Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira', 'push'],
   Grupos: ['id', 'nome', 'logo', 'valorMinimo', 'dataRevelacao', 'horaRevelacao', 'localNome', 'localEndereco', 'auditor', 'admins', 'sorteioEm', 'sorteioCodigo', 'trapaca', 'trapacaNota', 'criadoPor', 'criadoEm',
     'compraAtiva', 'compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix', 'compraLimite', 'edicaoDe', 'telefoneLiberado',
     'abracoAtivo', 'abracoValor', 'abracoLimite', 'abracoOptOut', 'compraOptOut'],
@@ -476,7 +478,8 @@ var Cripto = (function () {
     do { var b = P.bytesAleatorios(4); v = ((b[0] << 24) >>> 0) + (b[1] << 16) + (b[2] << 8) + b[3]; } while (v >= lim);
     return v % max;
   }
-  return { utf8: utf8, sha256: sha256, hmac: hmac, hmacJs: hmacJs, hex: hex, deHex: deHex, b64: b64, deB64: deB64,
+  function idPush(email) { return 'fs' + hex(hmac(subchave('push'), utf8(String(email).toLowerCase()))).substr(0, 30); }
+  return { idPush: idPush, utf8: utf8, sha256: sha256, hmac: hmac, hmacJs: hmacJs, hex: hex, deHex: deHex, b64: b64, deB64: deB64,
     cifrar: cifrar, decifrar: decifrar, hashSenha: hashSenha, token: token, hashToken: hashToken, inteiroAleatorio: inteiroAleatorio };
 })();
 
@@ -594,19 +597,35 @@ var Core = (function () {
 
   /* Notificação no celular (app ntfy). Nunca leva o nome sorteado nem quem foi escolhido. */
   /* Avisa várias pessoas de uma vez (sorteio, mural, lembretes). Só quem ativou o Telegram recebe. */
+  /* Notificação do próprio aplicativo (OneSignal), para quem ativou no Perfil */
+  function pushAtivo() { return !!(P.pushAtivo && P.pushAtivo()); }
+  function enviarPush(emails, titulo, msg) {
+    if (!emails.length || !pushAtivo()) return;
+    try { P.push(emails.map(Cripto.idPush), titulo, msg, P.urlApp()); } catch (e) { }
+  }
   function avisarVarios(emails, titulo, msg) {
-    var chats = [];
-    T('Usuarios').all().forEach(function (u) { if (emails.indexOf(u.email) >= 0 && /^tg:/.test(u.avisoTopico)) chats.push(u.avisoTopico.substr(3)); });
-    if (!chats.length || !P.avisar) return 0;
-    try { if (P.avisarVarios) P.avisarVarios(chats, titulo, msg, P.urlApp()); else chats.forEach(function (c) { P.avisar(c, titulo, msg, P.urlApp()); }); } catch (e) { }
-    return chats.length;
+    var chats = [], push = [], pessoas = {};
+    T('Usuarios').all().forEach(function (u) {
+      if (emails.indexOf(u.email) < 0) return;
+      if (/^tg:/.test(u.avisoTopico)) { chats.push(u.avisoTopico.substr(3)); pessoas[u.email] = 1; }
+      if (u.push) { push.push(u.email); pessoas[u.email] = 1; }
+    });
+    enviarPush(push, titulo, msg);
+    if (chats.length && P.avisar) {
+      try { if (P.avisarVarios) P.avisarVarios(chats, titulo, msg, P.urlApp()); else chats.forEach(function (c) { P.avisar(c, titulo, msg, P.urlApp()); }); } catch (e) { }
+    }
+    return Object.keys(pessoas).length;
   }
   /* Evita excesso de avisos: devolve true só se não houve aviso igual nos últimos 'segundos' */
   function primeiraVez(chave, segundos) { return P.umaVez ? P.umaVez(chave, segundos) : true; }
   function resumo(t, n) { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.substr(0, n - 1) + '…' : t; }
 
   function avisar(email, titulo, msg) {
-    try { var u = usuario(email); if (u && /^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), titulo, msg, P.urlApp()); } catch (e) { }
+    try {
+      var u = usuario(email); if (!u) return;
+      if (u.push) enviarPush([u.email], titulo, msg);
+      if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), titulo, msg, P.urlApp());
+    } catch (e) { }
   }
   function formatarTelefone(t) {
     var d = String(t || '').replace(/\D/g, '');
@@ -839,6 +858,7 @@ var Core = (function () {
       telefoneLiberado: telefoneLiberadoPara(u.email), avisos: /^tg:/.test(u.avisoTopico) ? 'ativo' : /^pend:/.test(u.avisoTopico) ? 'pendente' : '',
       avisoLink: /^pend:/.test(u.avisoTopico) && P.telegramBot && P.telegramBot() ? 'https://t.me/' + P.telegramBot() + '?start=' + u.avisoTopico.substr(5) : '',
       avisoDisponivel: !!(P.telegramBot && P.telegramBot()),
+      pushDisponivel: pushAtivo(), push: !!u.push, pushId: pushAtivo() ? Cripto.idPush(u.email) : '',
       emailNovo: (u.emailNovo && new Date(u.tokenEmailExpira).getTime() > Date.now()) ? u.emailNovo : '' };
   };
 
@@ -885,9 +905,18 @@ var Core = (function () {
   };
   api.testarAviso = function (a) {
     var u = sessao(a.token);
-    if (!/^tg:/.test(u.avisoTopico)) erro('Ative as notificações primeiro.');
-    avisar(u.email, 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.');
-    return 'Notificação de teste enviada.';
+    if (!/^tg:/.test(u.avisoTopico) && !u.push) erro('Ative as notificações primeiro.');
+    if (a.canal === 'push') { if (!u.push) erro('Ative as notificações do aplicativo primeiro.'); enviarPush([u.email], 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.'); }
+    else if (a.canal === 'telegram') { if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.', P.urlApp()); }
+    else avisar(u.email, 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.');
+    return 'Notificação de teste enviada. Ela deve chegar em alguns segundos.';
+  };
+  /* o celular informa que a pessoa ativou (ou desativou) as notificações do aplicativo */
+  api.registrarPush = function (a) {
+    var u = sessao(a.token);
+    if (a.ativo && !pushAtivo()) erro('As notificações do aplicativo ainda não foram configuradas pelo administrador geral.');
+    T('Usuarios').update(function (x) { return x.email === u.email; }, { push: a.ativo ? new Date().toISOString() : '' });
+    return api.eu({ token: a.token });
   };
 
   api.trocarSenha = function (a) {
@@ -2083,6 +2112,11 @@ var P = {
   telegramAtualizacoes: function () {
     return DEMO.tab('Usuarios').filter(function (u) { return /^pend:/.test(u.avisoTopico); }).map(function (u, i) { return { chatId: 7000 + i, texto: '/start ' + u.avisoTopico.substr(5) }; });
   },
+  pushAtivo: function () { return true; },
+  push: function (ids, titulo, msg) {
+    DEMO.ler().caixa.unshift({ para: 'Notificação no celular', assunto: '🔔 ' + titulo, html: '<div style="padding:18px;font-family:Arial,sans-serif"><b>🎁 ' + titulo + '</b><br>' + msg + '</div>', em: new Date().toISOString(), push: true });
+    DEMO.salvar();
+  },
   avisar: function (topico, titulo, msg) {
     DEMO.ler().caixa.unshift({ para: 'Telegram (' + topico + ')', assunto: '🔔 ' + titulo, html: '<div style="padding:18px;font-family:Arial,sans-serif"><b>' + titulo + '</b><br>' + msg + '</div>', em: new Date().toISOString(), push: true });
     DEMO.salvar();
@@ -2126,6 +2160,24 @@ function conectarPortal(pronto){
   setTimeout(fim, 1200);
 }
 
+/* Notificações do aplicativo: a página de entrada cuida da permissão e da inscrição */
+function falarPortal(m){ if(!VIA_PORTAL) return false; try{ window.top.postMessage(m, PORTAL); return true; }catch(e){ return false; } }
+var pushLigado='', pushOuvintes=[];
+window.addEventListener('message', function(ev){
+  if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='push-estado') return;
+  var l=pushOuvintes; pushOuvintes=[]; l.forEach(function(f){ f(ev.data); });
+});
+function estadoPush(msg){
+  return new Promise(function(ok){
+    if(!falarPortal(msg||{flecha:'push-estado'})) return ok(null);
+    var feito=false; function fim(e){ if(!feito){ feito=true; ok(e); } }
+    pushOuvintes.push(fim);
+    if(!msg || msg.flecha!=='push-ativar') setTimeout(function(){ fim(null); }, 20000);
+  });
+}
+/* ao abrir o app, liga este celular à pessoa (se ela já ativou) */
+function ligarPush(eu){ if(eu && eu.push && eu.pushId && pushLigado!==eu.pushId && falarPortal({flecha:'push-id', id:eu.pushId})) pushLigado=eu.pushId; }
+
 /* ---------- ícones ---------- */
 var I = {
   alvo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4"/><path d="M11 13 21 3M17 3h4v4"/></svg>',
@@ -2143,6 +2195,7 @@ var I = {
   enviar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 12 20 4l-4 16-4-7z"/></svg>',
   olho:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
   olhoFechado:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+  sair:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg>',
   ajuda:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 3.8"/><circle cx="12" cy="17.2" r=".6" fill="currentColor"/></svg>',
   mapa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>'
 };
@@ -2399,9 +2452,10 @@ function telaPedidoGrupo(){
     }); }); };
 }
 
+function pedirSaida(){ confirmar('Sair da conta?', 'Para entrar de novo, você vai precisar do seu e-mail e da sua senha.', 'Sair').then(function(ok){ if(ok) sair(false); }); }
 function entrou(r){ S.token=r.token; lsSet('flecha-token', r.token); return iniciar(); }
 function sair(silencioso){
-  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); limparCache(); lsSet('flecha-cache', null);
+  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); falarPortal({flecha:'push-sair'}); pushLigado=''; limparCache(); lsSet('flecha-cache', null);
   if(t && !silencioso) chamar('sair',{token:t}).catch(function(){});
   telaLogin(silencioso? 'Sua sessão expirou. Entre novamente.' : '');
 }
@@ -2461,7 +2515,7 @@ function guardarCache(){
   }, 1200);
 }
 function aplicarPacote(r, gid){
-  S.eu=r.eu;
+  S.eu=r.eu; ligarPush(r.eu);
   if(r.meuAmigo) CACHE['amigo:'+gid]={d:r.meuAmigo, j:JSON.stringify(r.meuAmigo)};
   if(r.conversas){ CACHE['conv:'+gid]={d:r.conversas, j:JSON.stringify(r.conversas)}; }
   if(r.mural) CACHE['mural:'+gid]={d:r.mural, j:JSON.stringify(r.mural)};
@@ -2518,12 +2572,13 @@ function textoPendencias(pd){
 function telaGrupos(){
   pararAtualizacao();
   var eu=S.eu, meus=eu.grupos.filter(function(g){ return g.membro; });
-  app.innerHTML='<header class="topo"><div class="wrap"><div class="logo">'+marca('#f3ead2')+'</div><div class="tit"><h1>Flecha Secreta</h1><div class="linha2">Olá, '+esc(eu.nome)+(eu.superadmin?' · administrador geral':'')+'</div></div><button class="icobtn" id="g-perfil" aria-label="Meu perfil">'+I.eu+'</button></div></header>'+
+  app.innerHTML='<header class="topo"><div class="wrap"><div class="logo">'+marca('#f3ead2')+'</div><div class="tit"><h1>Flecha Secreta</h1><div class="linha2">Olá, '+esc(eu.nome)+(eu.superadmin?' · administrador geral':'')+'</div></div><button class="icobtn" id="g-perfil" aria-label="Meu perfil">'+I.eu+'</button><button class="icobtn sair-topo" id="g-sair" aria-label="Sair da conta">'+I.sair+'<span>Sair</span></button></div></header>'+
   '<main class="wrap">'+(eu.pendencias && eu.pendencias.total? '<div class="faixa aviso-f" style="margin-top:16px"><div><b>Aguardando você:</b> '+esc(textoPendencias(eu.pendencias))+'. Veja abaixo'+(eu.pendencias.compras||eu.pendencias.devolucoes?' e, para as compras de escolha, na aba Admin do grupo':'')+'.</div></div>':'')+'<div class="secao"><h2>Meus grupos</h2><div class="lista">'+
     (meus.length? meus.map(function(g){ return '<button class="item" data-g="'+esc(g.id)+'">'+(g.logo?'<img class="av" '+imgAttrs(g.logo)+' alt="">':'<span class="av anon">'+marca('#f3ead2',false)+'</span>')+'<div class="txt"><div class="t1">'+esc(g.nome)+(g.admin?' <span class="chip ouro">admin</span>':'')+'</div><div class="t2">'+g.participantes+' participantes · revelação '+dataBR(g.dataRevelacao)+'</div></div></button>'; }).join('') : '<div class="item">Você ainda não participa de nenhum grupo.</div>')+
   '</div></div>'+(eu.superadmin? '<div id="painel-geral">'+carregando()+'</div>' : '')+'</main>';
   $$('[data-g]').forEach(function(b){ b.onclick=function(){ abrirGrupo(b.dataset.g); }; });
   $('#g-perfil').onclick=function(){ S.g=null; telaPerfil(); };
+  $('#g-sair').onclick=pedirSaida;
   if(eu.superadmin) chamar('painelGeral').then(desenharPainelGeral).catch(falha);
 }
 function desenharPainelGeral(pg){
@@ -2623,8 +2678,10 @@ function desenharCabecalho(){
     '<div class="logo">'+(g.logo?'<img '+imgAttrs(g.logo)+' alt="Logo do grupo">':marca('#f3ead2'))+'</div>'+
     '<div class="tit"><h1>'+esc(g.nome)+'</h1><div class="linha2">'+
       (g.auditor? '<span class="auditor-tag">'+avatar(g.auditor.foto,g.auditor.nome)+'Auditor: '+esc(g.auditor.nome)+'</span>' : '<span>Auditor a definir</span>')+
-      '<span>'+g.participantes.length+' participantes</span>'+(g.suporte?'<span class="auditor-tag" style="padding:1px 9px">modo suporte</span>':'')+'</div></div></div>';
+      '<span>'+g.participantes.length+' participantes</span>'+(g.suporte?'<span class="auditor-tag" style="padding:1px 9px">modo suporte</span>':'')+'</div></div>'+
+    '<button class="icobtn sair-topo" id="t-sair" aria-label="Sair da conta" title="Sair">'+I.sair+'<span>Sair</span></button></div>';
   var b=$('#t-grupos'); if(b) b.onclick=function(){ S.gid=null; lsSet('flecha-grupo',null); telaGrupos(); };
+  $('#t-sair').onclick=pedirSaida;
 }
 function desenharAbas(){
   var g=S.g;
@@ -2967,7 +3024,7 @@ function mostrarBoasVindas(papeis){
       '<li>🎁 <b>Conte o que gostaria de ganhar</b>, na aba Meu amigo. Ajuda muito quem tirar você!</li>'+
       '<li>📣 <b>Deixe um recado no Mural</b>, com seu nome ou anônimo. Vale dar pistas, provocar e brincar.</li>'+
       '<li>🤫 <b>Depois do sorteio</b>, converse em segredo com o seu amigo secreto e com quem tirou você.</li>'+
-      '<li>🔔 <b>Ative os avisos no Telegram</b> (no Perfil) para não perder nenhuma novidade.</li></ul>'+
+      '<li>🔔 <b>Ative as notificações</b> (no Perfil) para não perder nenhuma novidade.</li></ul>'+
       '<div>Participe, interaja e divirta-se: quanto mais gente animada, mais gostoso fica! '+esc(encontroTexto(g))+'</div>';
   } else {
     h+='<div class="selo">✨</div><h2>Uma novidade para você'+(nome?', '+esc(nome):'')+'!</h2>';
@@ -3014,7 +3071,7 @@ function abaAjuda(c){
       bloco('eu','Perfil', lst([
         'Coloque sua foto e ajuste seu nome'+(g.telefoneLiberado?' e seu celular':'')+'.',
         '<b>Trocar meu e-mail:</b> enviamos um link de confirmação para o e-mail novo.',
-        '<b>Notificações no celular:</b> ative os avisos pelo Telegram.',
+        '<b>Notificações no celular:</b> ative no Perfil para receber os avisos.',
         '<b>Fale com os administradores:</b> mande dúvidas e sugestões para quem organiza o grupo. A resposta aparece ali e chega por e-mail.',
         'Troque sua senha ou saia da conta.'
       ]))+
@@ -3049,7 +3106,7 @@ function abaAjuda(c){
       'Depois da revelação, crie a <b>edição do próximo ano</b> com os mesmos participantes.'
     ]), ' class="papel-ajuda"')+
     bloco('escudo','Mensagens', lst([
-      '<b>Mensagens dos participantes:</b> o que os participantes escrevem em “Fale com os administradores” chega em Admin > Mensagens, por e-mail e no Telegram. Toque numa mensagem para responder, editar (até 10 minutos) ou apagar.',
+      '<b>Mensagens dos participantes:</b> o que os participantes escrevem em “Fale com os administradores” chega em Admin > Mensagens, por e-mail e nas notificações. Toque numa mensagem para responder, editar (até 10 minutos) ou apagar.',
       '<b>Falar com o administrador geral:</b> para dúvidas, problemas ou sugestões sobre o próprio aplicativo.'
     ]), ' class="papel-ajuda"')+'</div>';
   var nf=0; function faq(t, corpo){ nf++; return bloco('ajuda', nf+'. '+t, corpo); }
@@ -3063,7 +3120,7 @@ function abaAjuda(c){
     faq('Posso trocar de amigo secreto?', '<div>Não. O sorteio é definitivo e qualquer troca desmancha o círculo, o que o Auditor percebe na revelação.</div>')+
     faq('Mandei uma mensagem errada. Dá para corrigir?', '<div>Sim. Toque na mensagem (nas Conversas) ou em <b>Editar</b> (no Mural) para corrigir até 10 minutos depois de enviar. Depois disso, você ainda pode apagar, desde que ninguém tenha respondido a mensagem.</div>')+
     faq('Mudei de e-mail.', '<div>No <b>Perfil</b>, toque em <b>Trocar meu e-mail</b>. Enviamos um link para o e-mail novo e a troca acontece quando você clicar nele. Senha, conversas e amigo secreto continuam iguais.</div>')+
-    faq('Como recebo avisos no celular?', '<div>No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b> e siga os passos no Telegram. Os avisos nunca mostram o nome do seu amigo secreto.</div>')+
+    faq('Como recebo avisos no celular?', '<div>Abra o Flecha Secreta pelo <b>ícone na tela de início</b>. No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b>, depois em <b>Permitir notificações</b> e confirme a pergunta do celular. Pronto: os avisos chegam como os de qualquer aplicativo, e tocar neles abre o Flecha Secreta. No iPhone, é preciso o iOS 16.4 ou mais novo (iPhone 8 em diante, atualizado). Quem preferir pode usar o Telegram, na mesma seção. Os avisos nunca mostram o nome do seu amigo secreto.</div>')+
     faq('Ainda tenho dúvidas.', '<div>No <b>Perfil</b>, use <b>Fale com os administradores</b>: sua mensagem chega para quem organiza o grupo, e a resposta aparece ali mesmo.</div>')+
   '</div></div>';
   c.innerHTML=h;
@@ -3140,6 +3197,69 @@ function mascaraTelefone(inp){
     inp.value=r; });
 }
 function desenharAvisos(box){
+  box.innerHTML='<div class="pilha" id="av-push"></div><div class="pilha" id="av-tg"></div>';
+  desenharPush($('#av-push',box), $('#av-tg',box));
+}
+function papeisAviso(){
+  var eu=S.eu, papel=['quando chegar mensagem nas suas conversas','quando o sorteio for realizado','quando houver recado no mural','com lembretes da revelação'];
+  if(eu.grupos.some(function(g){return g.admin;})) papel.push('quando alguém confirmar a participação ou escrever para a administração');
+  papel.push('quando a administração responder a sua mensagem');
+  return papel.slice(0,-1).join(', ')+' e '+papel[papel.length-1];
+}
+var I_SINO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>';
+function desenharPush(box, tgBox){
+  var eu=S.eu;
+  function telegram(titulo){ tgBox.hidden=false; tgBox.innerHTML=(titulo?'<div style="font-weight:600;margin-top:4px">'+titulo+'</div>':'')+'<div class="pilha" id="av-tg-in"></div>'; desenharTelegram($('#av-tg-in',tgBox)); }
+  if(!eu.pushDisponivel){ box.hidden=true; telegram(''); return; }
+  if(!VIA_PORTAL){
+    box.innerHTML='<div>Receba os avisos como notificação do próprio aplicativo, '+papeisAviso()+'.</div><div class="muted" style="font-size:13px">Para ativar, abra o Flecha Secreta pelo ícone na tela de início do celular (ou pelo endereço <b>flechasecreta.github.io</b> no computador).</div>';
+    telegram(eu.avisos?'Pelo Telegram':'Ou pelo Telegram'); return;
+  }
+  box.innerHTML='<div class="muted" style="font-size:13px">Verificando este aparelho…</div>'; tgBox.hidden=true;
+  estadoPush().then(function(st){
+    if(!document.body.contains(box)) return;
+    if(!st){ box.innerHTML='<div class="muted" style="font-size:13px">Não foi possível verificar as notificações deste aparelho.</div>'; telegram('Pelo Telegram'); return; }
+    var ativoAqui = st.inscrito && eu.push;
+    if(ativoAqui){
+      box.innerHTML='<div class="chip ok" style="justify-self:start">'+I_SINO+' notificações ativadas neste aparelho</div><div>Você recebe avisos '+papeisAviso()+'. Tocar no aviso abre o Flecha Secreta.</div>'+
+        '<div class="linha-acoes"><button class="btn sec peq" id="ps-teste">Enviar teste</button><button class="link" id="ps-off" style="font-size:13px">Desativar</button></div>';
+      $('#ps-teste',box).onclick=function(){ ocupado(this, function(){ return chamar('testarAviso',{canal:'push'}).then(function(t){ aviso(t); }); }); };
+      $('#ps-off',box).onclick=function(){ confirmar('Desativar as notificações?','Você deixa de receber os avisos do Flecha Secreta como notificação (em todos os seus aparelhos).','Desativar').then(function(ok){ if(!ok) return;
+        estadoPush({flecha:'push-desativar'}); chamar('registrarPush',{ativo:false}).then(function(e2){ S.eu=e2; desenharAvisos(box.parentNode); }).catch(falha); }); };
+      if(eu.avisos) telegram('Pelo Telegram'); else { tgBox.hidden=true; }
+      return;
+    }
+    if(st.ios && !st.noIcone && !st.demo){
+      box.innerHTML='<div>Receba os avisos como notificação do próprio aplicativo, '+papeisAviso()+'.</div>'+
+        '<div class="chip aviso" style="justify-self:start">abra pelo ícone</div><div class="muted" style="font-size:13px">No iPhone, as notificações só funcionam com o Flecha Secreta aberto pelo <b>ícone na tela de início</b> (iOS 16.4 ou mais novo). No Safari, toque em <b>Compartilhar</b> → <b>Adicionar à Tela de Início</b> e abra por lá.</div>';
+      telegram('Ou pelo Telegram'); return;
+    }
+    if(!st.suportado){
+      box.innerHTML='<div class="muted" style="font-size:13px">Este navegador não recebe notificações do aplicativo'+(st.ios?' (é preciso o iOS 16.4 ou mais novo)':'')+'. Você pode usar o Telegram.</div>';
+      telegram('Pelo Telegram'); return;
+    }
+    if(st.permissao==='denied'){
+      box.innerHTML='<div>As notificações do Flecha Secreta estão <b>bloqueadas</b> neste aparelho.</div><div class="muted" style="font-size:13px">'+
+        (st.ios? 'Para liberar: <b>Ajustes</b> do iPhone → <b>Notificações</b> → <b>Flecha Secreta</b> → ligue <b>Permitir Notificações</b>. Depois volte aqui.' : 'Para liberar: nas configurações do navegador, em <b>Notificações</b>, permita o site <b>flechasecreta.github.io</b>. Depois volte aqui.')+'</div>'+
+        '<button class="btn sec peq" id="ps-de-novo" style="justify-self:start">Já liberei</button>';
+      $('#ps-de-novo',box).onclick=function(){ desenharAvisos(box.parentNode); };
+      telegram('Ou pelo Telegram'); return;
+    }
+    box.innerHTML='<div>Receba os avisos como <b>notificação do próprio aplicativo</b>, '+papeisAviso()+'.</div><div class="muted" style="font-size:13px">É gratuito, não precisa instalar nada e os avisos nunca mostram o nome do seu amigo secreto.</div>'+
+      (eu.push?'<div class="muted" style="font-size:13px">Já está ativo em outro aparelho. Ative também neste, se quiser.</div>':'')+
+      '<button class="btn" id="ps-on">'+I_SINO+'Ativar notificações</button>';
+    $('#ps-on',box).onclick=function(){ var b=this; ocupado(b, function(){
+      return estadoPush({flecha:'push-ativar', id:eu.pushId}).then(function(st2){
+        if(st2 && st2.inscrito) return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; pushLigado=e2.pushId; aviso('Pronto! As notificações estão ativadas.'); desenharAvisos(box.parentNode); });
+        if(st2 && st2.permissao==='denied'){ aviso('As notificações foram bloqueadas. Veja como liberar logo abaixo.', true); desenharAvisos(box.parentNode); return; }
+        if(st2 && st2.resposta==='nao') return;
+        aviso('Não foi possível ativar agora. Tente de novo em instantes.', true);
+      });
+    }); };
+    telegram(eu.avisos?'Pelo Telegram':'Ou pelo Telegram');
+  });
+}
+function desenharTelegram(box){
   var eu=S.eu, papel=['quando chegar mensagem nas suas conversas','quando o sorteio for realizado','quando houver recado no mural','com lembretes da revelação (7 dias antes, na véspera e no dia)'];
   if(eu.grupos.some(function(g){return g.admin;})) papel.push('quando alguém confirmar a participação ou mandar mensagem para a administração');
   papel.push('quando a administração responder a sua mensagem');
@@ -3148,12 +3268,14 @@ function desenharAvisos(box){
   papel=[papel.slice(0,-1).join(', ')+' e '+papel[papel.length-1]];
   var tg='<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true"><path d="M21.9 4.6 18.7 19.6c-.2 1-.9 1.3-1.8.8l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.3-5 9.1-8.2c.4-.4-.1-.6-.6-.2L6.1 13.3l-4.8-1.5c-1-.3-1.1-1 .2-1.5L20.4 3c.9-.3 1.7.2 1.5 1.6Z"/></svg>';
   if(!eu.avisoDisponivel && !eu.avisos){
+    if(eu.pushDisponivel){ box.parentNode.hidden=true; return; }
     box.innerHTML='<div>Receba avisos no celular pelo Telegram '+papel.join(', ')+'.</div><div class="muted" style="font-size:13px">As notificações ainda não foram configuradas pelo administrador geral.</div>';
     return;
   }
   if(!eu.avisos){
-    box.innerHTML='<div>Receba avisos no celular pelo <b>Telegram</b> '+papel.join(', ')+'.</div><div class="muted" style="font-size:13px">É gratuito. Os avisos nunca mostram o nome do seu amigo secreto.</div><button class="btn sec" id="av-on">'+tg+'Ativar notificações</button>';
-    $('#av-on',box).onclick=function(){ ocupado(this, function(){ return chamar('configurarAvisos',{ativar:true}).then(function(e2){ S.eu=e2; desenharAvisos(box); }); }); };
+    box.innerHTML=eu.pushDisponivel? '<div class="muted" style="font-size:13px">Prefere receber os avisos pelo <b>Telegram</b>? Também é gratuito.</div><button class="btn sec peq" id="av-on" style="justify-self:start">'+tg+'Usar o Telegram</button>'
+      : '<div>Receba avisos no celular pelo <b>Telegram</b> '+papel.join(', ')+'.</div><div class="muted" style="font-size:13px">É gratuito. Os avisos nunca mostram o nome do seu amigo secreto.</div><button class="btn sec" id="av-on">'+tg+'Ativar notificações</button>';
+    $('#av-on',box).onclick=function(){ ocupado(this, function(){ return chamar('configurarAvisos',{ativar:true}).then(function(e2){ S.eu=e2; desenharTelegram(box); }); }); };
     return;
   }
   if(eu.avisos==='pendente'){
@@ -3161,13 +3283,13 @@ function desenharAvisos(box){
       '<ol style="margin:0;padding-left:20px;display:grid;gap:6px"><li>Tenha o app <b>Telegram</b> instalado no celular (App Store ou Google Play).</li><li>Toque em <b>Abrir o Telegram</b> abaixo e, na conversa que abrir, toque em <b>Iniciar</b> (ou <i>Start</i>).</li><li>Volte aqui e toque em <b>Já toquei em Iniciar</b>.</li></ol>'+
       '<a class="btn" href="'+esc(eu.avisoLink)+'" target="_blank" rel="noopener">'+tg+'Abrir o Telegram</a>'+
       '<div class="linha-acoes"><button class="btn sec" id="av-conf">Já toquei em Iniciar</button><button class="link" id="av-off" style="font-size:13px">Cancelar</button></div>';
-    $('#av-conf',box).onclick=function(){ ocupado(this, function(){ return chamar('confirmarAvisos',{}).then(function(e2){ S.eu=e2; aviso('Notificações ativadas! Você recebeu uma mensagem no Telegram.'); desenharAvisos(box); }); }); };
+    $('#av-conf',box).onclick=function(){ ocupado(this, function(){ return chamar('confirmarAvisos',{}).then(function(e2){ S.eu=e2; aviso('Notificações ativadas! Você recebeu uma mensagem no Telegram.'); desenharTelegram(box); }); }); };
   } else {
     box.innerHTML='<div class="chip ok" style="justify-self:start">'+tg+' notificações ativadas no Telegram</div><div>Você recebe avisos '+papel.join(', ')+'.</div>'+
       '<div class="linha-acoes"><button class="btn sec peq" id="av-teste">Enviar teste</button><button class="link" id="av-off" style="font-size:13px">Desativar</button></div>';
     $('#av-teste',box).onclick=function(){ ocupado(this, function(){ return chamar('testarAviso',{}).then(function(t){ aviso(t); }); }); };
   }
-  $('#av-off',box).onclick=function(){ chamar('configurarAvisos',{ativar:false}).then(function(e2){ S.eu=e2; desenharAvisos(box); }).catch(falha); };
+  $('#av-off',box).onclick=function(){ chamar('configurarAvisos',{ativar:false}).then(function(e2){ S.eu=e2; desenharTelegram(box); }).catch(falha); };
 }
 
 /* ---------- aba: auditor ---------- */
@@ -3347,7 +3469,7 @@ function desenharRecadosAdmin(box, l){
   box.innerHTML= l.length? (pend? '<div class="faixa aviso-f" style="margin-bottom:10px"><div><b>'+pend+'</b> conversa(s) aguardando resposta.</div></div>':'')+'<div class="lista">'+l.map(function(x,i){ return '<button class="item" data-rc="'+i+'">'+avatar(x.foto,x.nome)+'<div class="txt"><div class="t1">'+esc(x.nome)+(x.pendente?' <span class="chip aviso">aguardando resposta</span>':'')+'</div><div class="t2">'+esc(x.ultima)+'</div></div><span class="hora">'+quando(x.em)+'</span></button>'; }).join('')+'</div>'
     : '<div class="cartao muted">Nenhuma mensagem ainda. Os participantes podem escrever para a administração pela aba Perfil, em “Fale com os administradores”.</div>';
   $$('[data-rc]',box).forEach(function(b){ b.onclick=function(){ var x=l[+b.dataset.rc];
-    modal('<div class="revelado">'+avatar(x.foto,x.nome)+'<div><h2>'+esc(x.nome)+'</h2><div class="muted" style="font-size:13px">Mensagens para a administração</div></div></div><div id="rp-fio" class="pilha" style="gap:10px"></div><div class="muted" style="font-size:12.5px">'+esc(x.nome)+' recebe a resposta por e-mail, no Telegram (se ativou) e no Perfil do aplicativo.</div><button class="btn sec" data-fechar>Fechar</button>', function(m){
+    modal('<div class="revelado">'+avatar(x.foto,x.nome)+'<div><h2>'+esc(x.nome)+'</h2><div class="muted" style="font-size:13px">Mensagens para a administração</div></div></div><div id="rp-fio" class="pilha" style="gap:10px"></div><div class="muted" style="font-size:12.5px">'+esc(x.nome)+' recebe a resposta por e-mail, nas notificações (se ativou) e no Perfil do aplicativo.</div><button class="btn sec" data-fechar>Fechar</button>', function(m){
       function achar(l2){ l=l2; desenharRecadosAdmin(box, l2); var y=l2.filter(function(k){ return k.email===x.email; })[0]; return y? y.itens : []; }
       fio($('#rp-fio',m), { itens:x.itens, placeholder:'Responder a '+x.nome+'…', rotulo:'Enviar resposta',
         rotuloAutor:function(k){ return k.minha?'Você':(k.de==='a'? k.autor+' (administração)' : k.autor); },
@@ -3360,7 +3482,7 @@ function desenharRecadosAdmin(box, l){
 function desenharSuporte(box, gid, d){
   var geral=d.souGeral;
   fio(box, { itens:d.itens, placeholder: geral?'Responder ao administrador do grupo…':'Escreva sua mensagem…', rotulo: geral?'Enviar resposta':'Enviar mensagem',
-    intro: geral? '' : '<div class="muted" style="font-size:14px">Dúvidas, problemas ou sugestões sobre o aplicativo? Escreva aqui. A resposta aparece nesta conversa e também chega no seu e-mail e no Telegram.</div>',
+    intro: geral? '' : '<div class="muted" style="font-size:14px">Dúvidas, problemas ou sugestões sobre o aplicativo? Escreva aqui. A resposta aparece nesta conversa e também chega no seu e-mail e nas notificações.</div>',
     vazio: geral? '<div class="muted">Nenhuma mensagem deste grupo ainda.</div>' : '',
     rotuloAutor:function(m){ return m.minha?'Você':(m.de==='geral'? (geral? m.autor : 'Administrador geral') : m.autor+' (admin do grupo)'); },
     enviar:function(t, r){ return chamar(geral?'responderSuporte':'falarComAdminGeral',{grupoId:gid, texto:t, respostaA:r}).then(function(d2){ aviso(geral?'Resposta enviada.':'Mensagem enviada ao administrador geral.'); if(geral) atualizarPendencias(); return d2.itens; }); },
@@ -3418,10 +3540,10 @@ function ligarCompraAdmin(c){
       (p.status==='pedido' && !S.g.sorteado? '<button class="btn peq" data-lib="'+esc(p.id)+'">PIX recebido, liberar</button>':'')+(p.status!=='escolhido' && !S.g.sorteado? '<button class="btn sec peq" data-rec="'+esc(p.id)+'">Recusar</button>':'')+'</div></div>'; }).join('')+'</div>' : '<div class="muted">Nenhum pedido em andamento.</div>')+
       '<div class="muted" style="font-size:12.5px">Confira o PIX no seu banco antes de liberar. Se recusar, o participante é avisado (sem o motivo) de que, comprovado o pagamento, o valor será devolvido.</div>'+
       (hist.length? '<div class="rotulo" style="margin-top:6px">Histórico: cancelados e recusados</div><div class="lista">'+hist.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1" style="flex-wrap:wrap">'+esc(p.nome)+tipoChip(p)+'</div><div class="t2" style="white-space:normal">'+esc(motivo[p.motivo]||'encerrado')+' em '+quando(p.encerradoEm||p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+situacao(p)+
-        (p.pendente? '<button class="btn peq" data-dev="'+esc(p.id)+'">Devolução feita</button><button class="btn sec peq" data-semp="'+esc(p.id)+'">Não houve pagamento</button>':'')+'</div></div>'; }).join('')+'</div><div class="muted" style="font-size:12.5px">Ao marcar “Devolução feita”, o participante recebe um aviso por e-mail e no Telegram.</div>' : '');
+        (p.pendente? '<button class="btn peq" data-dev="'+esc(p.id)+'">Devolução feita</button><button class="btn sec peq" data-semp="'+esc(p.id)+'">Não houve pagamento</button>':'')+'</div></div>'; }).join('')+'</div><div class="muted" style="font-size:12.5px">Ao marcar “Devolução feita”, o participante recebe um aviso por e-mail e nas notificações.</div>' : '');
     $$('[data-lib]',box).forEach(function(b){ b.onclick=function(){ ocupado(b, function(){ return chamar('decidirCompra',{grupoId:S.gid,id:b.dataset.lib,aprovar:true}).then(function(ps2){ aviso('Escolha liberada. A pessoa foi avisada por e-mail.'); desenhar(ps2); recarregarGrupo(); atualizarPendencias(); }); }); }; });
     $$('[data-rec]',box).forEach(function(b){ b.onclick=function(){ confirmar('Recusar este pedido?','O pedido é cancelado e vai para o histórico. O participante recebe um aviso, sem o motivo, de que, comprovado o pagamento, o valor será devolvido. Depois, registre aqui a devolução.','Recusar').then(function(ok){ if(ok) chamar('decidirCompra',{grupoId:S.gid,id:b.dataset.rec,aprovar:false}).then(function(ps2){ aviso('Pedido recusado. O participante foi avisado.'); desenhar(ps2); recarregarGrupo(); atualizarPendencias(); }).catch(falha); }); }; });
-    $$('[data-dev]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.dev; })[0]; b.onclick=function(){ confirmar('Devolução feita?','Confirme que você já devolveu o valor para '+esc(p.nome)+'. '+esc(p.nome)+' será avisado(a) por e-mail e no Telegram.','Sim, já devolvi').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:S.gid,id:p.id,situacao:'devolvido'}).then(function(ps2){ aviso('Devolução registrada. '+p.nome+' foi avisado(a).'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
+    $$('[data-dev]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.dev; })[0]; b.onclick=function(){ confirmar('Devolução feita?','Confirme que você já devolveu o valor para '+esc(p.nome)+'. '+esc(p.nome)+' será avisado(a) por e-mail e nas notificações.','Sim, já devolvi').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:S.gid,id:p.id,situacao:'devolvido'}).then(function(ps2){ aviso('Devolução registrada. '+p.nome+' foi avisado(a).'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
     $$('[data-semp]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.semp; })[0]; b.onclick=function(){ confirmar('Não houve pagamento?','Confirme que o PIX de '+esc(p.nome)+' não entrou na conta. Nada será enviado ao participante.','Confirmar').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:S.gid,id:p.id,situacao:'sem-pagamento'}).then(function(ps2){ aviso('Registrado.'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
   }
   chamar('pedidosCompra',{grupoId:S.gid}).then(desenhar).catch(function(e){ box.innerHTML=''; });

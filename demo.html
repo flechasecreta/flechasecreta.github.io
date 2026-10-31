@@ -47,6 +47,17 @@
   #abertura .ajuda { font-size: 13px; opacity: .85; max-width: 32ch; }
   #abertura a { color: #e2b65e; }
   .some { opacity: 0; pointer-events: none; }
+  /* pedido de permissão das notificações (o iPhone exige um toque na própria página de entrada) */
+  #push { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; padding: 20px; background: rgba(10, 20, 14, .55);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; transition: opacity .25s; }
+  #push .caixa { background: #fbfcf8; color: #1d2620; border-radius: 20px; padding: 22px 20px 18px; max-width: 340px; width: 100%; display: grid; gap: 12px; text-align: center; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+  #push img { width: 64px; height: 64px; border-radius: 15px; justify-self: center; }
+  #push h2 { margin: 0; font: 400 22px/1.2 Georgia, "Times New Roman", serif; color: #21402f; }
+  #push p { margin: 0; color: #4a564e; font-size: 14px; }
+  #push button { border: 0; border-radius: 999px; padding: 13px 18px; font: 600 16px system-ui, -apple-system, sans-serif; cursor: pointer; }
+  #push .sim { background: #21402f; color: #fff; }
+  #push .nao { background: none; color: #55615a; font-weight: 500; font-size: 14px; padding: 6px; }
+  @media (prefers-color-scheme: dark) { #push .caixa { background: #1f2b23; color: #e8ede6; } #push h2 { color: #cfe3d2; } #push p { color: #b5c2b8; } #push .sim { background: #c9973a; color: #1d2620; } #push .nao { color: #b5c2b8; } }
 </style>
 </head>
 <body>
@@ -90,6 +101,8 @@ window.addEventListener('message', function (ev) {
     document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
   } else if (ev.data.flecha === 'teclado') {
     voltarDepois(450);
+  } else if (/^push-/.test(ev.data.flecha)) {
+    tratarPush(ev.data, ev.source, ev.origin);
   } else if (ev.data.flecha === 'salvar' && typeof ev.data.chave === 'string' && /^flecha-/.test(ev.data.chave)) {
     if (GRANDES.indexOf(ev.data.chave) >= 0) {
       try { if (ev.data.valor == null) localStorage.removeItem(CHAVE + ':' + ev.data.chave); else localStorage.setItem(CHAVE + ':' + ev.data.chave, String(ev.data.valor).slice(0, 3000000)); } catch (e) {}
@@ -114,6 +127,98 @@ function voltarDepois(ms) { clearTimeout(tTopo); tTopo = setTimeout(voltarAoTopo
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', function () { if (!tecladoAberto()) voltarDepois(250); });
 }
+
+/* ===================================================================
+ * Notificações do aplicativo (OneSignal). O aplicativo pede pelo Perfil;
+ * a permissão é pedida aqui, na página de entrada, com um toque da pessoa.
+ * =================================================================== */
+var PUSH_REAL = false;                                        // a demonstração só simula
+var ONESIGNAL_APP = '7acca0f6-c0d0-4211-96d9-cd627d7dd522';
+var ONESIGNAL_SAFARI = 'web.onesignal.auto.5a33fe23-ccc7-4feb-afe0-cf26b0b7b29c';
+var pushPronto = null;
+function noIconeAgora() { return !!(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)); }
+function ehIos() { return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function pushSuportado() { return 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window; }
+function carregarPush() {
+  if (pushPronto) return pushPronto;
+  pushPronto = new Promise(function (ok, falhou) {
+    if (!PUSH_REAL) return ok(null);
+    if (!pushSuportado()) return falhou(new Error('sem suporte'));
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(function (OneSignal) {
+      return OneSignal.init({ appId: ONESIGNAL_APP, safari_web_id: ONESIGNAL_SAFARI, autoResubscribe: true, notifyButton: { enable: false } })
+        .then(function () { ok(OneSignal); }, falhou);
+    });
+    var sc = document.createElement('script'); sc.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'; sc.defer = true;
+    sc.onerror = function () { falhou(new Error('não carregou')); };
+    document.head.appendChild(sc);
+    setTimeout(function () { falhou(new Error('demorou')); }, 15000);
+  });
+  pushPronto.catch(function () {});
+  return pushPronto;
+}
+var demoPush = { permissao: 'default', inscrito: false };
+function estadoPush() {
+  var base = { flecha: 'push-estado', ios: ehIos(), noIcone: noIconeAgora(), suportado: PUSH_REAL ? pushSuportado() : true };
+  if (!PUSH_REAL) { base.permissao = demoPush.permissao; base.inscrito = demoPush.inscrito; base.demo = true; return Promise.resolve(base); }
+  if (!base.suportado) { base.permissao = 'indisponivel'; base.inscrito = false; return Promise.resolve(base); }
+  base.permissao = Notification.permission;
+  return carregarPush().then(function (OS) {
+    base.inscrito = !!(OS.User && OS.User.PushSubscription && OS.User.PushSubscription.optedIn) && Notification.permission === 'granted';
+    return base;
+  }, function () { base.inscrito = false; base.erro = true; return base; });
+}
+function perguntarPush(aoTocar) {
+  return new Promise(function (resp) {
+    var d = document.createElement('div'); d.id = 'push';
+    d.innerHTML = '<div class="caixa"><img src="icone-256.png" alt=""><h2>Avisos do Flecha Secreta</h2>' +
+      '<p>Toque em <b>Permitir</b> aqui e, em seguida, confirme na pergunta do celular. Os avisos nunca mostram o nome do seu amigo secreto.</p>' +
+      '<button class="sim">Permitir notificações</button><button class="nao">Agora não</button></div>';
+    document.body.appendChild(d);
+    function fim(v) { d.style.opacity = '0'; setTimeout(function () { d.remove(); }, 250); resp(v); }
+    // o pedido ao celular acontece dentro do próprio toque (exigência do iPhone)
+    d.querySelector('.sim').onclick = function () { var p = null; try { if (aoTocar) p = aoTocar(); } catch (e) {} fim(p || true); };
+    d.querySelector('.nao').onclick = function () { fim(false); };
+  });
+}
+function tratarPush(m, fonte, origem) {
+  function responder(extra) { estadoPush().then(function (e) { for (var k in extra) e[k] = extra[k]; try { fonte.postMessage(e, origem); } catch (x) {} }); }
+  var id = typeof m.id === 'string' && /^[a-z0-9]{6,64}$/.test(m.id) ? m.id : '';
+  if (m.flecha === 'push-estado') return responder({});
+  if (m.flecha === 'push-id') {             // ao abrir: mantém o celular ligado à pessoa certa
+    if (!id || !PUSH_REAL || !pushSuportado() || Notification.permission !== 'granted') return;
+    return carregarPush().then(function (OS) { return OS.login(id); }).catch(function () {});
+  }
+  if (m.flecha === 'push-sair') {
+    if (!PUSH_REAL) { demoPush.inscrito = false; return; }
+    if (!pushSuportado()) return;
+    return carregarPush().then(function (OS) { return OS.logout(); }).catch(function () {});
+  }
+  if (m.flecha === 'push-desativar') {
+    if (!PUSH_REAL) { demoPush.inscrito = false; return responder({}); }
+    return carregarPush().then(function (OS) { return OS.User.PushSubscription.optOut(); }).catch(function () {}).then(function () { responder({}); });
+  }
+  if (m.flecha === 'push-ativar' && id) {
+    if (!PUSH_REAL) {
+      return perguntarPush().then(function (sim) { if (sim) { demoPush.permissao = 'granted'; demoPush.inscrito = true; } responder({ resposta: sim ? 'sim' : 'nao' }); });
+    }
+    if (!pushSuportado()) return responder({});
+    if (Notification.permission === 'denied') return responder({});
+    var OSp = carregarPush();
+    function inscrever(OS) {
+      return Promise.resolve(OS.login(id)).then(function () {
+        if (Notification.permission === 'granted') return OS.User.PushSubscription.optIn();
+        return OS.Notifications.requestPermission().then(function () { if (Notification.permission === 'granted') return OS.User.PushSubscription.optIn(); });
+      });
+    }
+    if (Notification.permission === 'granted') return OSp.then(inscrever).catch(function () {}).then(function () { setTimeout(function () { responder({}); }, 800); });
+    return perguntarPush(function () { return Notification.requestPermission(); }).then(function (pedido) {
+      if (!pedido) return responder({ resposta: 'nao' });
+      return Promise.resolve(pedido).then(function () { return OSp; }).then(inscrever).catch(function () {}).then(function () { setTimeout(function () { responder({}); }, 1200); });
+    });
+  }
+}
+if (PUSH_REAL && pushSuportado() && Notification.permission === 'granted') carregarPush();
 
 /* No Safari (fora do ícone da tela de início), uma dica rápida */
 (function () {
