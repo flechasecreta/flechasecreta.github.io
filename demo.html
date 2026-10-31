@@ -89,7 +89,7 @@ window.addEventListener('message', function (ev) {
     var capa = ev.data.modo === 'capa';
     document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
   } else if (ev.data.flecha === 'teclado') {
-    voltarAoTopo();
+    voltarDepois(450);
   } else if (ev.data.flecha === 'salvar' && typeof ev.data.chave === 'string' && /^flecha-/.test(ev.data.chave)) {
     if (GRANDES.indexOf(ev.data.chave) >= 0) {
       try { if (ev.data.valor == null) localStorage.removeItem(CHAVE + ':' + ev.data.chave); else localStorage.setItem(CHAVE + ':' + ev.data.chave, String(ev.data.valor).slice(0, 3000000)); } catch (e) {}
@@ -101,11 +101,18 @@ window.addEventListener('message', function (ev) {
   }
 });
 
-/* iPhone: depois que o teclado fecha, a página às vezes fica "deslocada" e o toque cai fora do botão. Recoloca no lugar. */
-function voltarAoTopo() { if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) window.scrollTo(0, 0); }
-window.addEventListener('scroll', function () { setTimeout(voltarAoTopo, 60); });
+/* iPhone: depois que o teclado FECHA, a página às vezes fica "deslocada" e o toque cai fora do botão.
+   Recoloca no lugar só com o teclado fechado: enquanto ele está aberto, o iPhone precisa deslizar a tela
+   para mostrar o campo que está sendo digitado. */
+function tecladoAberto() { var v = window.visualViewport; return !!(v && v.height < window.innerHeight - 120); }
+function voltarAoTopo() {
+  if (tecladoAberto()) return;
+  if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) window.scrollTo(0, 0);
+}
+var tTopo = null;
+function voltarDepois(ms) { clearTimeout(tTopo); tTopo = setTimeout(voltarAoTopo, ms); }
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', function () { if (window.visualViewport.height >= window.innerHeight - 80) setTimeout(voltarAoTopo, 60); });
+  window.visualViewport.addEventListener('resize', function () { if (!tecladoAberto()) voltarDepois(250); });
 }
 
 /* No Safari (fora do ícone da tela de início), uma dica rápida */
