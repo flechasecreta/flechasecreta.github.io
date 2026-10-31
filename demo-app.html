@@ -906,9 +906,9 @@ var Core = (function () {
   api.testarAviso = function (a) {
     var u = sessao(a.token);
     if (!/^tg:/.test(u.avisoTopico) && !u.push) erro('Ative as notificações primeiro.');
-    if (a.canal === 'push') { if (!u.push) erro('Ative as notificações do aplicativo primeiro.'); enviarPush([u.email], 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.'); }
-    else if (a.canal === 'telegram') { if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.', P.urlApp()); }
-    else avisar(u.email, 'Flecha Secreta', 'Tudo certo! As notificações estão funcionando.');
+    if (a.canal === 'push') { if (!u.push) erro('Ative as notificações do aplicativo primeiro.'); enviarPush([u.email], 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.'); }
+    else if (a.canal === 'telegram') { if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.', P.urlApp()); }
+    else avisar(u.email, 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.');
     return 'Notificação de teste enviada. Ela deve chegar em alguns segundos.';
   };
   /* o celular informa que a pessoa ativou (ou desativou) as notificações do aplicativo */
@@ -3253,6 +3253,11 @@ function desenharPush(box, tgBox){
         if(st2 && st2.inscrito) return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; pushLigado=e2.pushId; aviso('Pronto! As notificações estão ativadas.'); desenharAvisos(box.parentNode); });
         if(st2 && st2.permissao==='denied'){ aviso('As notificações foram bloqueadas. Veja como liberar logo abaixo.', true); desenharAvisos(box.parentNode); return; }
         if(st2 && st2.resposta==='nao') return;
+        // permissão dada, mas a inscrição ainda está terminando: confere mais uma vez antes de desistir
+        if(st2 && st2.permissao==='granted') return new Promise(function(r){ setTimeout(r, 2500); }).then(function(){ return estadoPush(); }).then(function(st3){
+          if(st3 && st3.inscrito) return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; pushLigado=e2.pushId; aviso('Pronto! As notificações estão ativadas.'); desenharAvisos(box.parentNode); });
+          aviso('Quase lá! Toque em Ativar notificações mais uma vez para concluir.', true);
+        });
         aviso('Não foi possível ativar agora. Tente de novo em instantes.', true);
       });
     }); };

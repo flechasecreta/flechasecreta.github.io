@@ -181,6 +181,15 @@ function perguntarPush(aoTocar) {
     d.querySelector('.nao').onclick = function () { fim(false); };
   });
 }
+/* espera a inscrição ficar pronta no OneSignal (na primeira vez o iPhone pode levar alguns segundos) */
+function esperarInscricao(ms) {
+  var ate = Date.now() + ms;
+  return new Promise(function (ok) {
+    (function ver() {
+      estadoPush().then(function (e) { if (e.inscrito || e.permissao !== 'granted' || Date.now() > ate) ok(); else setTimeout(ver, 700); });
+    })();
+  });
+}
 function tratarPush(m, fonte, origem) {
   function responder(extra) { estadoPush().then(function (e) { for (var k in extra) e[k] = extra[k]; try { fonte.postMessage(e, origem); } catch (x) {} }); }
   var id = typeof m.id === 'string' && /^[a-z0-9]{6,64}$/.test(m.id) ? m.id : '';
@@ -211,10 +220,10 @@ function tratarPush(m, fonte, origem) {
         return OS.Notifications.requestPermission().then(function () { if (Notification.permission === 'granted') return OS.User.PushSubscription.optIn(); });
       });
     }
-    if (Notification.permission === 'granted') return OSp.then(inscrever).catch(function () {}).then(function () { setTimeout(function () { responder({}); }, 800); });
+    if (Notification.permission === 'granted') return OSp.then(inscrever).catch(function () {}).then(function () { return esperarInscricao(15000); }).then(function () { responder({}); });
     return perguntarPush(function () { return Notification.requestPermission(); }).then(function (pedido) {
       if (!pedido) return responder({ resposta: 'nao' });
-      return Promise.resolve(pedido).then(function () { return OSp; }).then(inscrever).catch(function () {}).then(function () { setTimeout(function () { responder({}); }, 1200); });
+      return Promise.resolve(pedido).then(function () { return OSp; }).then(inscrever).catch(function () {}).then(function () { return esperarInscricao(20000); }).then(function () { responder({}); });
     });
   }
 }
