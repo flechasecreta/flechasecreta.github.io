@@ -600,8 +600,8 @@ var Core = (function () {
   /* Notificação do próprio aplicativo (OneSignal), para quem ativou no Perfil */
   function pushAtivo() { return !!(P.pushAtivo && P.pushAtivo()); }
   function enviarPush(emails, titulo, msg) {
-    if (!emails.length || !pushAtivo()) return;
-    try { P.push(emails.map(Cripto.idPush), titulo, msg, P.urlApp()); } catch (e) { }
+    if (!emails.length || !pushAtivo()) return null;
+    try { return P.push(emails.map(Cripto.idPush), titulo, msg, P.urlApp()); } catch (e) { return [{ codigo: 0, corpo: { erro: String(e) } }]; }
   }
   function avisarVarios(emails, titulo, msg) {
     var chats = [], push = [], pessoas = {};
@@ -903,10 +903,47 @@ var Core = (function () {
     if (r.avisos !== 'ativo') erro('Ainda não recebemos sua mensagem no Telegram. Abra o link, toque em Iniciar (Start) e tente de novo.');
     return r;
   };
+  /* Diagnóstico das notificações do aplicativo: o que o OneSignal sabe sobre os aparelhos da pessoa */
+  function nomeAparelho(sb) {
+    var t = String(sb.type || ''), m = sb.device_model || '';
+    var nome = /Safari/i.test(t) ? 'iPhone/iPad ou Mac (Safari)' : /Chrome/i.test(t) ? 'Chrome' + (/Android/i.test(sb.device_os || '') || /android/i.test(m) ? ' (Android)' : '') : /Firefox/i.test(t) ? 'Firefox' : t || 'aparelho';
+    return nome + (m ? ' · ' + m : '');
+  }
+  function diagnosticoPush(email, resposta) {
+    var linhas = [];
+    if (resposta) resposta.forEach(function (r) {
+      var c = r.corpo || {};
+      if (r.codigo >= 300 || r.codigo === 0) linhas.push('⚠️ O serviço de notificações recusou o envio (código ' + r.codigo + ').');
+      else if (c.errors && (c.errors.invalid_aliases || /not subscribed/i.test(JSON.stringify(c.errors)))) linhas.push('⚠️ O serviço de notificações não encontrou nenhum aparelho ativo desta pessoa.');
+      else if (c.id) linhas.push('✅ Envio aceito pelo serviço de notificações.');
+    });
+    if (P.pushAparelhos) {
+      var ap = P.pushAparelhos(Cripto.idPush(email));
+      if (ap === null) linhas.push('Não foi possível consultar os aparelhos.');
+      else if (!ap.length) linhas.push('Nenhum aparelho cadastrado. A pessoa precisa tocar em Desativar e depois em Ativar notificações, no Perfil.');
+      else ap.forEach(function (sb) { linhas.push((sb.enabled && sb.notification_types > 0 ? '📱 Ativo: ' : '📵 Inativo: ') + nomeAparelho(sb)); });
+    }
+    return linhas.join('\n');
+  }
   api.testarAviso = function (a) {
     var u = sessao(a.token);
+    if (a.email && a.email !== u.email) {          // administrador geral testa o aparelho de outra pessoa
+      if (!ehSuper(u.email)) erro('Só o administrador geral pode testar as notificações de outra pessoa.');
+      var alvo = usuario(String(a.email).toLowerCase()); if (!alvo) erro('Pessoa não encontrada.');
+      var partes = [];
+      if (alvo.push) { partes.push('Notificação do aplicativo:\n' + diagnosticoPush(alvo.email, enviarPush([alvo.email], 'Teste de notificação ✅', u.nome + ' está testando os seus avisos. Pode ignorar.'))); }
+      else partes.push('Notificação do aplicativo: não ativada por ' + alvo.nome + '.');
+      if (/^tg:/.test(alvo.avisoTopico) && P.avisar) { P.avisar(alvo.avisoTopico.substr(3), 'Teste de notificação ✅', u.nome + ' está testando os seus avisos. Pode ignorar.', P.urlApp()); partes.push('Telegram: teste enviado.'); }
+      else partes.push('Telegram: não ativado.');
+      return partes.join('\n\n');
+    }
     if (!/^tg:/.test(u.avisoTopico) && !u.push) erro('Ative as notificações primeiro.');
-    if (a.canal === 'push') { if (!u.push) erro('Ative as notificações do aplicativo primeiro.'); enviarPush([u.email], 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.'); }
+    if (a.canal === 'push') {
+      if (!u.push) erro('Ative as notificações do aplicativo primeiro.');
+      var r = enviarPush([u.email], 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.');
+      if (r && r.some(function (x) { var c = x.corpo || {}; return x.codigo >= 300 || x.codigo === 0 || (c.errors && (c.errors.invalid_aliases || /not subscribed/i.test(JSON.stringify(c.errors)))); }))
+        return 'O serviço de notificações não encontrou este aparelho. Toque em Desativar e depois em Ativar notificações de novo.';
+    }
     else if (a.canal === 'telegram') { if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.', P.urlApp()); }
     else avisar(u.email, 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.');
     return 'Notificação de teste enviada. Ela deve chegar em alguns segundos.';
@@ -1180,7 +1217,7 @@ var Core = (function () {
     var souA = c.a === u.email, dest = souA ? c.b : c.a, titulo;
     if (c.tipo === 'amigo') titulo = souA ? 'Quem te tirou mandou uma mensagem 🎁' : 'Seu amigo secreto respondeu 🎯';
     else titulo = (souA && c.aAnon) ? 'Você recebeu uma mensagem anônima 🤫' : nomeDe(u.email) + ' te mandou uma mensagem';
-    if (primeiraVez('msg:' + c.id + ':' + dest, 600)) avisar(dest, titulo, 'Abra o Flecha Secreta, na aba Conversas, para ler.');
+    if (primeiraVez('msg:' + c.id + ':' + dest, 60)) avisar(dest, titulo, 'Abra o Flecha Secreta, na aba Conversas, para ler.');
     return api.mensagens(a);
   };
   /* Editar (até 10 minutos depois) e apagar as próprias mensagens: conversas e mural */
@@ -1264,7 +1301,7 @@ var Core = (function () {
     var oficial = !a.anonimo && (ehAdmin(x.g, u.email) || ehSuper(u.email));
     var outros = membros(x.g.id).map(function (m) { return m.email; }).filter(function (e) { return e !== u.email; });
     // recado do administrador sempre avisa; os demais no máximo um aviso a cada 30 minutos por grupo
-    if (oficial || primeiraVez('mural:' + x.g.id, 1800)) {
+    if (oficial || primeiraVez('mural:' + x.g.id, 600)) {
       var quem = a.anonimo ? 'Recado anônimo' : (oficial ? 'Recado do administrador ' + nomeDe(u.email) : 'Recado de ' + nomeDe(u.email));
       avisarVarios(outros, oficial ? '📣 ' + quem : 'Novo recado no mural', (oficial ? '' : quem + ': ') + '"' + resumo(t, 140) + '"');
     }
@@ -2113,9 +2150,10 @@ var P = {
     return DEMO.tab('Usuarios').filter(function (u) { return /^pend:/.test(u.avisoTopico); }).map(function (u, i) { return { chatId: 7000 + i, texto: '/start ' + u.avisoTopico.substr(5) }; });
   },
   pushAtivo: function () { return true; },
+  pushAparelhos: function () { return [{ type: 'iOSPush', enabled: true, notification_types: 1, device_model: 'iPhone (demonstração)' }]; },
   push: function (ids, titulo, msg) {
     DEMO.ler().caixa.unshift({ para: 'Notificação no celular', assunto: '🔔 ' + titulo, html: '<div style="padding:18px;font-family:Arial,sans-serif"><b>🎁 ' + titulo + '</b><br>' + msg + '</div>', em: new Date().toISOString(), push: true });
-    DEMO.salvar();
+    DEMO.salvar(); return [{ codigo: 200, corpo: { id: 'demo' } }];
   },
   avisar: function (topico, titulo, msg) {
     DEMO.ler().caixa.unshift({ para: 'Telegram (' + topico + ')', assunto: '🔔 ' + titulo, html: '<div style="padding:18px;font-family:Arial,sans-serif"><b>' + titulo + '</b><br>' + msg + '</div>', em: new Date().toISOString(), push: true });
@@ -3595,6 +3633,7 @@ function opcoesParticipante(c, p){
     (p.confirmado? '<button class="btn sec" id="op-em">Trocar e-mail (com confirmação)</button>':'')+
     (!p.confirmado && !p.ficticio? '<button class="btn sec" id="op-conv">Reenviar e-mail de confirmação</button>':'')+
     (g.sorteado && p.confirmado? '<button class="btn sec" id="op-res">Reenviar e-mail do sorteio para esta pessoa</button>':'')+
+    (S.eu.superadmin && p.confirmado? '<button class="btn sec" id="op-not">Testar as notificações desta pessoa</button>':'')+
     '<button class="btn sec" id="op-adm">'+(p.admin?'Retirar de administrador':'Tornar administrador')+'</button>'+
     (S.g.sorteioTravado?'':'<button class="btn sec" id="op-rem" style="color:var(--erro)">Remover do grupo</button>')+
     '</div><button class="btn" data-fechar>Fechar</button>', function(m, fechar){
@@ -3607,6 +3646,8 @@ function opcoesParticipante(c, p){
       });
     };
     var cv=$('#op-conv',m); if(cv) cv.onclick=function(){ ocupado(cv, function(){ return chamar('reenviarConvite',{grupoId:S.gid,email:p.email}).then(function(r){ var x=r.resultado[0]; feito(r.grupo, x.ok?'Convite reenviado.':x.erro); }); }); };
+    var on=$('#op-not',m); if(on) on.onclick=function(){ ocupado(on, function(){ return chamar('testarAviso',{email:p.email}).then(function(t){ fechar();
+      modal('<h2>Notificações de '+esc(p.nome)+'</h2><div style="white-space:pre-line;font-size:14.5px;line-height:1.5">'+esc(t)+'</div><div class="muted" style="font-size:12.5px">'+esc(p.nome)+' recebe agora um aviso de teste em cada canal ativo.</div><button class="btn" data-fechar>Fechar</button>'); }); }); };
     var rs=$('#op-res',m); if(rs) rs.onclick=function(){ ocupado(rs, function(){ return chamar('reenviarSorteio',{grupoId:S.gid,email:p.email}).then(function(r){ feito(r.grupo, 'E-mail do sorteio reenviado para '+p.nome+'.'); }); }); };
     $('#op-adm',m).onclick=function(){ var b=this; ocupado(b, function(){ return chamar('definirAdmin',{grupoId:S.gid,email:p.email,admin:!p.admin}).then(function(g2){ feito(g2, p.admin?'Deixou de ser administrador.':'Agora é administrador.'); }); }); };
     var orm=$('#op-rem',m); if(orm) orm.onclick=function(){ fechar(); confirmar('Remover '+p.nome+'?', g.sorteado? 'O sorteio já foi feito. Remover alguém <b>anula o sorteio</b> e será preciso sortear de novo.' : 'A pessoa sai do grupo e suas conversas neste grupo são apagadas.', 'Remover').then(function(s){ if(s) chamar('removerParticipante',{grupoId:S.gid,email:p.email,anularSorteio:true}).then(function(g2){ S.g=g2; desenharCabecalho(); desenharAdmin(c); aviso('Removido.'); }).catch(falha); }); };
