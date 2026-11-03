@@ -1375,11 +1375,11 @@ var Core = (function () {
     var id = Cripto.token().substr(0, 12);
     T('PedidosGrupo').insert({ id: id, nome: nome, email: email, telefone: tel, nomeGrupo: nomeGrupo, participantes: qtd ? String(qtd) : '', mensagem: msg, status: 'pendente', criadoEm: agora(), decididoEm: '', resposta: '' });
     P.superadmins().map(norm).filter(String).forEach(function (e) {
-      avisar(e, 'Pedido de novo grupo 🆕', nome + ' quer criar "' + nomeGrupo + '"' + (qtd ? ' (' + qtd + ' pessoas)' : '') + '. Aprove no painel de grupos.');
+      avisar(e, 'Pedido de novo grupo 🆕', nome + ' quer criar "' + nomeGrupo + '"' + (qtd ? ' (' + qtd + ' pessoas)' : '') + '. Aprove na aba Central.');
       P.enviarEmail({ para: e, responderPara: email, assunto: APP_NOME + ': pedido de novo grupo – ' + nomeGrupo, html: moldura('Pedido de novo grupo',
         '<p><b>' + esc(nome) + '</b> (' + esc(email) + (tel ? ', ' + esc(tel) : '') + ') quer criar o grupo <b>' + esc(nomeGrupo) + '</b>' + (qtd ? ', com cerca de <b>' + qtd + '</b> participantes' : '') + '.</p>' +
         (msg ? '<div style="white-space:pre-wrap;background:#f3efe6;border-radius:10px;padding:12px 14px;margin:12px 0">' + esc(msg) + '</div>' : '') +
-        '<p>Para aprovar ou recusar, abra o aplicativo e vá em <b>Meus grupos</b>.</p>' + botao(P.urlApp(), 'Abrir o painel')) });
+        '<p>Para aprovar ou recusar, abra o aplicativo e vá na aba <b>Central</b>, em <b>Grupos</b>.</p>' + botao(P.urlApp(), 'Abrir o aplicativo')) });
     });
     log(email, 'pediu-grupo', nomeGrupo);
     return 'Pedido enviado! Você receberá um e-mail assim que ele for analisado.';
@@ -1428,6 +1428,7 @@ var Core = (function () {
       var tc = todasCompras(g.id);
       g.comprasPedido = tc.filter(function (c) { return c.status === 'pedido'; }).length;
       g.devolucoes = tc.filter(devolucaoPendente).length;
+      g.temCompras = tc.length > 0;
     });
     var pedidos = T('PedidosGrupo').all().filter(function (x) { return x.status === 'pendente'; })
       .map(function (x) { return { id: x.id, nome: x.nome, email: x.email, telefone: x.telefone, nomeGrupo: x.nomeGrupo, participantes: x.participantes, mensagem: x.mensagem, criadoEm: x.criadoEm }; })
@@ -1478,7 +1479,7 @@ var Core = (function () {
       var r = P.enviarEmail({ para: e, responderPara: u.email, assunto: APP_NOME + ': mensagem de ' + nomeDe(u.email) + ' (' + x.g.nome + ')', html: moldura('Mensagem de um administrador',
         '<p><b>' + esc(nomeDe(u.email)) + '</b> (' + esc(u.email) + '), administrador do grupo <b>' + esc(x.g.nome) + '</b>, escreveu:</p>' +
         '<div style="white-space:pre-wrap;background:#f3efe6;border-radius:10px;padding:14px 16px;margin:12px 0">' + esc(t.substr(0, 3000)) + '</div>' +
-        '<p style="font-size:13px;color:#8a8370">Responda pelo aplicativo (Meus grupos > Mensagens de suporte), para ficar registrado na conversa, ou responda a este e-mail, que vai direto para ' + esc(u.email) + '.</p>' + botao(P.urlApp(), 'Responder pelo aplicativo'), x.g) });
+        '<p style="font-size:13px;color:#8a8370">Responda pelo aplicativo (aba Central > Suporte), para ficar registrado na conversa, ou responda a este e-mail, que vai direto para ' + esc(u.email) + '.</p>' + botao(P.urlApp(), 'Responder pelo aplicativo'), x.g) });
       if (r.ok) enviados++;
       avisar(e, 'Mensagem de ' + nomeDe(u.email) + ' 📨', 'Administrador do grupo ' + x.g.nome + ': "' + resumo(t, 140) + '"');
     });
@@ -1849,7 +1850,7 @@ var Core = (function () {
     if (tipo === 'escolha' && fixasDe(g.id)[u.email]) erro('Escolha indisponível: as vagas deste grupo já foram preenchidas.');
     T('Compras').insert({ id: Cripto.token().substr(0, 16), grupoId: g.id, comprador: Cripto.cifrar({ e: u.email }), escolha: '', status: 'pedido', pedidoEm: agora(), liberadoEm: '', escolhidoEm: '', tipo: tipo === 'abraco' ? 'abraco' : '' });
     P.superadmins().map(norm).filter(function (e) { return e && e !== u.email; }).forEach(function (e) {
-      avisar(e, 'Novo pedido: ' + nt, 'Grupo ' + g.nome + ': confira o PIX (' + moeda(valorTipo(g, tipo)) + ') e libere na aba Admin.');
+      avisar(e, 'Novo pedido: ' + nt, 'Grupo ' + g.nome + ': confira o PIX (' + moeda(valorTipo(g, tipo)) + ') e libere na aba Central.');
       P.enviarEmail({ para: e, assunto: APP_NOME + ': novo pedido de ' + nt + ' (' + g.nome + ')', html: moldura('Novo pedido: ' + nt, '<p><b>' + esc(u.nome) + '</b> informou que pagou ' + (tipo === 'abraco' ? 'um <b>Abraço Garantido</b>' : 'a compra de escolha') + ' (' + esc(moeda(valorTipo(g, tipo))) + ') no grupo <b>' + esc(g.nome) + '</b>.</p><p>Confira o PIX e, se estiver tudo certo, libere na aba Admin do aplicativo.</p>' + botao(P.urlApp(), 'Abrir o aplicativo'), g) });
     });
     log(u.email, 'pediu-' + tipo, g.id);
@@ -1864,7 +1865,7 @@ var Core = (function () {
     T('Compras').update(function (k) { return k.id === c.id; }, { status: 'cancelado', motivo: 'cancelado', encerradoEm: agora() });
     avisarMestres('Pedido cancelado: ' + nt, 'pedido de ' + nt + ' cancelado',
       '<p><b>' + esc(u.nome) + '</b> cancelou o pedido de ' + nt + ' no grupo <b>' + esc(x.g.nome) + '</b>, depois de avisar que tinha feito o PIX.</p>' +
-      '<p><b>Confira no seu banco se o pagamento entrou.</b> Se entrou, <b>devolva o valor</b> (' + esc(moeda(valorTipo(x.g, tipo))) + ') e registre a devolução na aba Admin do grupo, em Compras. ' + esc(u.nome) + ' será avisado(a). Se o pagamento não entrou, marque “Não houve pagamento”.</p>', x.g, u.email);
+      '<p><b>Confira no seu banco se o pagamento entrou.</b> Se entrou, <b>devolva o valor</b> (' + esc(moeda(valorTipo(x.g, tipo))) + ') e registre a devolução na aba Central, em Compras. ' + esc(u.nome) + ' será avisado(a). Se o pagamento não entrou, marque “Não houve pagamento”.</p>', x.g, u.email);
     log(u.email, 'cancelou-escolha', x.g.id);
     return api.compraInfo(a);
   };
@@ -2218,6 +2219,7 @@ function ligarPush(eu){ if(eu && eu.push && eu.pushId && pushLigado!==eu.pushId 
 
 /* ---------- ícones ---------- */
 var I = {
+  central:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="3.5" r="1.6"/><circle cx="12" cy="20.5" r="1.6"/><circle cx="3.5" cy="12" r="1.6"/><circle cx="20.5" cy="12" r="1.6"/><path d="M12 5.1V9M12 15v3.9M5.1 12H9M15 12h3.9"/></svg>',
   alvo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4"/><path d="M11 13 21 3M17 3h4v4"/></svg>',
   presente:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="9" width="18" height="4" rx="1"/><path d="M5 13v8h14v-8M12 9v12M12 9C9 9 7 7.5 7.5 5.8 8 4 11 4.5 12 9Zm0 0c3 0 5-1.5 4.5-3.2C16 4 13 4.5 12 9Z"/></svg>',
   balao:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
@@ -2559,7 +2561,7 @@ function aplicarPacote(r, gid){
   if(r.mural) CACHE['mural:'+gid]={d:r.mural, j:JSON.stringify(r.mural)};
 }
 function prepararAba(g){
-  if(['admin'].indexOf(S.aba)>=0 && !g.souAdmin) S.aba='amigo'; if(S.aba==='auditor' && !g.souAuditor) S.aba='amigo';
+  if(['admin'].indexOf(S.aba)>=0 && !g.souAdmin) S.aba='amigo'; if(S.aba==='auditor' && !g.souAuditor) S.aba='amigo'; if(S.aba==='central' && !g.souMestre) S.aba='amigo';
   if(g.suporte && ['amigo','conversas','mural'].indexOf(S.aba)>=0) S.aba='admin';
 }
 function grupoAberto(g){
@@ -2611,7 +2613,7 @@ function telaGrupos(){
   pararAtualizacao();
   var eu=S.eu, meus=eu.grupos.filter(function(g){ return g.membro; });
   app.innerHTML='<header class="topo"><div class="wrap"><div class="logo">'+marca('#f3ead2')+'</div><div class="tit"><h1>Flecha Secreta</h1><div class="linha2">Olá, '+esc(eu.nome)+(eu.superadmin?' · administrador geral':'')+'</div></div><button class="icobtn" id="g-perfil" aria-label="Meu perfil">'+I.eu+'</button><button class="icobtn sair-topo" id="g-sair" aria-label="Sair da conta">'+I.sair+'<span>Sair</span></button></div></header>'+
-  '<main class="wrap">'+(eu.pendencias && eu.pendencias.total? '<div class="faixa aviso-f" style="margin-top:16px"><div><b>Aguardando você:</b> '+esc(textoPendencias(eu.pendencias))+'. Veja abaixo'+(eu.pendencias.compras||eu.pendencias.devolucoes?' e, para as compras de escolha, na aba Admin do grupo':'')+'.</div></div>':'')+'<div class="secao"><h2>Meus grupos</h2><div class="lista">'+
+  '<main class="wrap">'+(eu.pendencias && eu.pendencias.total? '<div class="faixa aviso-f" style="margin-top:16px"><div><b>Aguardando você:</b> '+esc(textoPendencias(eu.pendencias))+'. Veja abaixo ou, dentro de um grupo, na aba <b>Central</b>.</div></div>':'')+'<div class="secao"><h2>Meus grupos</h2><div class="lista">'+
     (meus.length? meus.map(function(g){ return '<button class="item" data-g="'+esc(g.id)+'">'+(g.logo?'<img class="av" '+imgAttrs(g.logo)+' alt="">':'<span class="av anon">'+marca('#f3ead2',false)+'</span>')+'<div class="txt"><div class="t1">'+esc(g.nome)+(g.admin?' <span class="chip ouro">admin</span>':'')+'</div><div class="t2">'+g.participantes+' participantes · revelação '+dataBR(g.dataRevelacao)+'</div></div></button>'; }).join('') : '<div class="item">Você ainda não participa de nenhum grupo.</div>')+
   '</div></div>'+(eu.superadmin? '<div id="painel-geral">'+carregando()+'</div>' : '')+'</main>';
   $$('[data-g]').forEach(function(b){ b.onclick=function(){ abrirGrupo(b.dataset.g); }; });
@@ -2621,12 +2623,13 @@ function telaGrupos(){
 }
 function desenharPainelGeral(pg){
   var box=$('#painel-geral'); if(!box) return;
+  var naCentral=!!box.closest('#conteudo');
   box.innerHTML=
   (pg.pedidos.length? '<div class="secao"><h2>Pedidos de novos grupos ('+pg.pedidos.length+')</h2><div class="pilha">'+pg.pedidos.map(function(x,i){ return '<div class="cartao pilha" style="gap:8px"><div class="linha-acoes" style="justify-content:space-between"><b style="font-size:16px">'+esc(x.nomeGrupo)+'</b><span class="muted" style="font-size:12px">'+quando(x.criadoEm)+'</span></div><div style="font-size:14px">'+esc(x.nome)+' · <span class="mono">'+esc(x.email)+'</span>'+(x.telefone?' · '+esc(x.telefone):'')+(x.participantes?' · cerca de <b>'+esc(x.participantes)+'</b> pessoas':'')+'</div>'+(x.mensagem?'<div class="citacao" style="margin-top:0">'+esc(x.mensagem)+'</div>':'')+'<div class="linha-acoes"><button class="btn peq" data-aprova="'+i+'">Aprovar</button><button class="btn sec peq" data-recusa="'+i+'">Recusar</button></div></div>'; }).join('')+'</div></div>' : '')+
-  (pg.grupos.some(function(g){return g.suporte;})? '<div class="secao"><h2>Mensagens de suporte</h2><div class="lista">'+pg.grupos.filter(function(g){return g.suporte;}).sort(function(a,b){ return (b.suporte.pendente-a.suporte.pendente) || (b.suporte.em>a.suporte.em?1:-1); }).map(function(g){ return '<button class="item" data-sup="'+esc(g.id)+'"><span class="av anon">'+I.balao+'</span><div class="txt"><div class="t1">'+esc(g.nome)+(g.suporte.pendente?' <span class="chip aviso">aguardando resposta</span>':'')+'</div><div class="t2">'+esc(g.suporte.ultima)+'</div></div><span class="hora">'+quando(g.suporte.em)+'</span></button>'; }).join('')+'</div></div>' : '')+
+  (!naCentral && pg.grupos.some(function(g){return g.suporte;})? '<div class="secao"><h2>Mensagens de suporte</h2><div class="lista">'+pg.grupos.filter(function(g){return g.suporte;}).sort(function(a,b){ return (b.suporte.pendente-a.suporte.pendente) || (b.suporte.em>a.suporte.em?1:-1); }).map(function(g){ return '<button class="item" data-sup="'+esc(g.id)+'"><span class="av anon">'+I.balao+'</span><div class="txt"><div class="t1">'+esc(g.nome)+(g.suporte.pendente?' <span class="chip aviso">aguardando resposta</span>':'')+'</div><div class="t2">'+esc(g.suporte.ultima)+'</div></div><span class="hora">'+quando(g.suporte.em)+'</span></button>'; }).join('')+'</div></div>' : '')+
   (pg.convites.length? '<div class="secao"><h2>Convites aguardando</h2><div class="lista">'+pg.convites.map(function(c){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><span class="av anon">'+I.presente+'</span><div class="txt" style="flex:1 1 160px"><div class="t1">'+esc(c.nomeGrupo)+'</div><div class="t2" style="white-space:normal">'+esc(c.nome)+' · <span class="mono">'+esc(c.email)+'</span> · vale até '+dataBR(c.expira)+'</div></div><div class="linha-acoes"><button class="btn sec peq" data-copia="'+esc(c.link)+'">Copiar link</button><button class="link" style="font-size:13px;color:var(--tinta-2)" data-cancela="'+esc(c.convite)+'">Cancelar</button></div></div>'; }).join('')+'</div></div>' : '')+
   '<div class="secao"><h2>Convidar líder para um novo grupo</h2><form class="cartao pilha" id="cl-f">'+
-    '<div class="muted" style="font-size:14px">O líder recebe um link por e-mail, cria a senha e vira o administrador do novo grupo. Você não entra como participante, mas pode dar suporte pela aba Admin.</div>'+
+    '<div class="muted" style="font-size:14px">O líder recebe um link por e-mail, cria a senha e vira o administrador do novo grupo. Você não entra como participante, mas pode dar suporte pelas abas Admin e Central.</div>'+
     '<div class="grade2"><label class="campo">Nome do líder<input class="inp" id="cl-nome" autocomplete="off"></label><label class="campo">E-mail do líder<input class="inp" id="cl-email" type="email" inputmode="email" autocomplete="off"></label></div>'+
     '<label class="campo">Nome sugerido do grupo (o líder pode mudar)<input class="inp" id="cl-grupo" placeholder="Ex.: Amigos do Condomínio"></label>'+
     '<button class="btn">Enviar convite</button></form></div>'+
@@ -2700,6 +2703,7 @@ var ABAS = [
   {id:'participantes', rot:'Grupo', ic:'pessoas'},
   {id:'auditor', rot:'Auditor', ic:'prancheta', se:function(g){return g.souAuditor;}},
   {id:'admin', rot:'Admin', ic:'escudo', se:function(g){return g.souAdmin;}},
+  {id:'central', rot:'Central', ic:'central', se:function(g){return g.souMestre;}},
   {id:'perfil', rot:'Perfil', ic:'eu'},
   {id:'ajuda', rot:'Ajuda', ic:'ajuda'}
 ];
@@ -2725,7 +2729,7 @@ function desenharAbas(){
   var g=S.g;
   var vis=ABAS.filter(function(a){ return !a.se || a.se(g); });
   var nav=$('#abas').parentNode; if(nav) nav.classList.toggle('muitas', vis.length>=7);
-  $('#abas').innerHTML=vis.map(function(a){ return '<button data-aba="'+a.id+'" aria-current="'+(S.aba===a.id)+'">'+I[a.ic]+'<span>'+(vis.length>=6&&a.curto?a.curto:a.rot)+'</span>'+(a.id==='conversas'?'<i class="bolinha" id="bol-conv" hidden></i>':'')+'</button>'; }).join('');
+  $('#abas').innerHTML=vis.map(function(a){ return '<button data-aba="'+a.id+'" aria-current="'+(S.aba===a.id)+'">'+I[a.ic]+'<span>'+(vis.length>=6&&a.curto?a.curto:a.rot)+'</span>'+(a.id==='conversas'?'<i class="bolinha" id="bol-conv" hidden></i>':'')+(a.id==='central'?'<i class="bolinha" id="bol-central"'+(S.eu&&S.eu.pendencias&&S.eu.pendencias.total?'':' hidden')+'></i>':'')+'</button>'; }).join('');
   $$('#abas [data-aba]').forEach(function(b){ b.onclick=function(){ S.conv=null; mostrarAba(b.dataset.aba); }; });
 }
 function mostrarAba(id){
@@ -2733,7 +2737,7 @@ function mostrarAba(id){
   $$('#abas [data-aba]').forEach(function(b){ b.setAttribute('aria-current', b.dataset.aba===id); });
   var c=$('#conteudo'); c.innerHTML=carregando(); window.scrollTo(0,0);
   seqAba++; mexeu=false;
-  ({amigo:abaAmigo, conversas:abaConversas, mural:abaMural, participantes:abaParticipantes, admin:abaAdmin, auditor:abaAuditor, perfil:abaPerfil, ajuda:abaAjuda}[id]||abaAmigo)(c);
+  ({amigo:abaAmigo, conversas:abaConversas, mural:abaMural, participantes:abaParticipantes, admin:abaAdmin, central:abaCentral, auditor:abaAuditor, perfil:abaPerfil, ajuda:abaAjuda}[id]||abaAmigo)(c);
 }
 
 /* ---------- faixa de informações do grupo ---------- */
@@ -3146,7 +3150,14 @@ function abaAjuda(c){
     bloco('escudo','Mensagens', lst([
       '<b>Mensagens dos participantes:</b> o que os participantes escrevem em “Fale com os administradores” chega em Admin > Mensagens, por e-mail e nas notificações. Toque numa mensagem para responder, editar (até 10 minutos) ou apagar.',
       '<b>Falar com o administrador geral:</b> para dúvidas, problemas ou sugestões sobre o próprio aplicativo.'
-    ]), ' class="papel-ajuda"')+'</div>';
+    ]), ' class="papel-ajuda"')+
+    (S.g && S.g.souMestre? bloco('central','Aba Central (administrador geral)', lst([
+      '<b>Pendências:</b> tudo o que espera por você, em todos os grupos. Toque num item para ir direto ao lugar certo.',
+      '<b>Compras:</b> confira o PIX no banco e libere, recuse ou registre a devolução dos pedidos de compra de escolha e de Abraço Garantido de todos os grupos.',
+      '<b>Suporte:</b> as conversas com os administradores dos grupos.',
+      '<b>Grupos:</b> pedidos de novos grupos, convites para líderes e a lista de todos os grupos.',
+      '<b>Notificações:</b> mande um aviso de teste para alguém e veja quais aparelhos dessa pessoa estão cadastrados.'
+    ]), ' class="papel-ajuda"') : '')+'</div>';
   var nf=0; function faq(t, corpo){ nf++; return bloco('ajuda', nf+'. '+t, corpo); }
   h+='<h2 style="font-size:19px;margin-top:8px">Perguntas frequentes</h2><div>'+
     faq('Esqueci minha senha. E agora?', '<div>Na tela de entrada, toque em <b>Esqueci minha senha</b> e informe seu e-mail. Você recebe um link para criar uma senha nova.</div>')+
@@ -3413,13 +3424,12 @@ function desenharAdmin(c){
   var libera = g.dataRevelacao? dataBR(somaDia(g.dataRevelacao,1)) : 'o dia seguinte à revelação';
   var pdg = S.eu && S.eu.pendencias;
   var temCompra = !!blocoCompraAdmin(g);
-  var subs=[{id:'resumo',t:'Resumo'},{id:'participantes',t:'Participantes'},{id:'mensagens',t:'Mensagens'}].concat(temCompra?[{id:'compra',t:'Compras'}]:[]).concat([{id:'grupo',t:'Dados do grupo'}]);
+  var subs=[{id:'resumo',t:'Resumo'},{id:'participantes',t:'Participantes'}].concat(g.suporte?[]:[{id:'mensagens',t:'Mensagens'}]).concat(temCompra?[{id:'compra',t:'Compras'}]:[]).concat([{id:'grupo',t:'Dados do grupo'}]);
   var sub=S.subAdmin && subs.some(function(x){ return x.id===S.subAdmin; })? S.subAdmin : 'resumo';
   function aba(id){ return id===sub? '' : ' hidden'; }
   c.innerHTML=
   '<nav class="sub-abas" id="ad-nav" aria-label="Seções da administração">'+subs.map(function(x){ return '<button type="button" data-sub-ir="'+x.id+'" aria-current="'+(x.id===sub)+'">'+esc(x.t)+(x.id==='participantes'?' <span class="cont">'+ps.length+'</span>':'')+(x.id==='mensagens'?' <span class="cont alerta" id="ad-nav-msg" hidden></span>':'')+'</button>'; }).join('')+'</nav>'+
   '<div data-sub="resumo"'+aba('resumo')+'>'+
-  (g.souMestre && pdg && pdg.total? '<div class="faixa aviso-f" style="margin-top:16px;flex-wrap:wrap"><div style="flex:1 1 200px"><b>Administrador geral, aguardando você:</b> '+esc(textoPendencias(pdg))+'.</div><button class="btn sec peq" id="ad-painel">Abrir painel geral</button></div>' : '')+
   '<div class="secao"><h2>Situação</h2><div class="estado">'+
     '<div><div class="rotulo">Participantes</div><div class="n">'+ps.length+'</div></div>'+
     '<div><div class="rotulo">E-mail confirmado</div><div class="n">'+conf+'<span class="muted" style="font-size:15px">/'+ps.length+'</span></div></div>'+
@@ -3447,7 +3457,7 @@ function desenharAdmin(c){
 
   '</div><div data-sub="mensagens"'+aba('mensagens')+'>'+
   (g.suporte? '' : '<div class="secao"><h2>Mensagens dos participantes</h2><div id="ad-rec">'+carregando()+'</div></div>')+
-  (!g.souMestre || g.suporte || g.outrosAdmins? '<div class="secao"><h2>'+(g.souMestre?'Suporte: mensagens dos administradores deste grupo':'Falar com o administrador geral')+'</h2><div class="cartao pilha" id="ad-sup">'+carregando()+'</div></div>' : '')+
+  (!g.souMestre? '<div class="secao"><h2>Falar com o administrador geral</h2><div class="cartao pilha" id="ad-sup">'+carregando()+'</div></div>' : '')+
   '</div><div data-sub="compra"'+aba('compra')+'>'+
   blocoCompraAdmin(g)+
   '</div><div data-sub="grupo"'+aba('grupo')+'>'+
@@ -3471,7 +3481,6 @@ function desenharAdmin(c){
   $('#ad-f').onsubmit=function(ev){ ev.preventDefault(); var d={nome:$('#ad-nome').value, valorMinimo:$('#ad-valor').value, auditor:$('#ad-aud').value, dataRevelacao:$('#ad-data').value, horaRevelacao:$('#ad-hora').value, localNome:$('#ad-local').value, localEndereco:$('#ad-end').value, telefoneLiberado:$('#ad-tel').checked}; if(logo!==null) d.logo=logo;
     ocupado(this.querySelector('.btn:last-child'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; desenharCabecalho(); aviso('Dados do grupo salvos.'); desenharAdmin(c); }); }); };
   ligarCompraAdmin(c);
-  var bp=$('#ad-painel'); if(bp) bp.onclick=function(){ S.gid=null; lsSet('flecha-grupo',null); chamar('eu').then(function(eu){ S.eu=eu; telaGrupos(); }).catch(falha); };
   var arec=$('#ad-rec'); if(arec) chamar('recadosParticipantes',{grupoId:S.gid}).then(function(l){ desenharRecadosAdmin(arec, l); }).catch(function(){ arec.closest('.secao').remove(); });
   var sup=$('#ad-sup'); if(sup) chamar('suporte',{grupoId:S.gid}).then(function(d){ desenharSuporte(sup, S.gid, d); }).catch(function(){ sup.innerHTML=''; });
   var px=$('#ad-prox'); if(px) px.onclick=function(){ confirmar('Criar a edição do próximo ano?','Os participantes, dados do grupo, administradores e auditor serão copiados para um novo grupo. As listas de presentes começam em branco e todos precisarão confirmar de novo.','Criar').then(function(ok){ if(!ok) return;
@@ -3485,11 +3494,12 @@ function desenharAdmin(c){
   if($('#ad-add')) $('#ad-add').onclick=function(){ incluir(c); };
   $$('[data-p]',c).forEach(function(b){ b.onclick=function(){ opcoesParticipante(c, ps[+b.dataset.p]); }; });
 }
-function ligarSubAbas(c){
+function ligarSubAbas(c, chave){
+  chave=chave||'subAdmin';
   var nav=$('#ad-nav',c); if(!nav) return;
   function posicionar(){ var t=$('#topo'); if(t) nav.style.top='calc(var(--sat) + '+t.offsetHeight+'px)'; }
   posicionar();
-  $$('[data-sub-ir]',nav).forEach(function(b){ b.onclick=function(){ var id=b.dataset.subIr; S.subAdmin=id;
+  $$('[data-sub-ir]',nav).forEach(function(b){ b.onclick=function(){ var id=b.dataset.subIr; S[chave]=id;
     $$('[data-sub-ir]',nav).forEach(function(x){ x.setAttribute('aria-current', x===b); });
     $$('[data-sub]',c).forEach(function(d){ d.hidden = d.dataset.sub!==id; });
     try{ nav.scrollLeft = b.offsetLeft - 16; }catch(e){}
@@ -3533,10 +3543,86 @@ function desenharSuporte(box, gid, d){
     apagar:function(id){ return chamar('apagarFio',{grupoId:gid, tipo:'suporte', id:id}).then(function(d2){ return d2.itens; }); } });
 }
 
-function atualizarPendencias(){ return chamar('eu').then(function(eu){ S.eu=eu; desenharCabecalho(); }).catch(function(){}); }
+/* ---------- aba: Central (só o administrador geral) ---------- */
+function abaCentral(c){
+  S.subCentral='resumo';
+  var seq=seqAba;
+  Promise.all([chamar('painelGeral'), chamar('eu')]).then(function(r){
+    if(seq!==seqAba) return;
+    S.eu=r[1]; desenharCabecalho(); marcarCentral(); desenharCentral(c, r[0]);
+  }).catch(falha);
+}
+function desenharCentral(c, pg){
+  var pd=(S.eu && S.eu.pendencias) || {suporte:0,pedidosGrupo:0,compras:0,devolucoes:0,total:0}, g=S.g;
+  var gsComp=pg.grupos.filter(function(x){ return x.temCompras || x.id===S.gid && g.compra && (g.compra.ativa || g.compra.historico); })
+    .sort(function(a,b){ return ((b.comprasPedido+b.devolucoes)-(a.comprasPedido+a.devolucoes)) || (a.id===S.gid?-1:b.id===S.gid?1:0); });
+  var gsSup=pg.grupos.filter(function(x){ return x.suporte; }).sort(function(a,b){ return (b.suporte.pendente-a.suporte.pendente) || (b.suporte.em>a.suporte.em?1:-1); });
+  function cont(n, alerta){ return n? ' <span class="cont'+(alerta?' alerta':'')+'">'+n+'</span>' : ''; }
+  var subs=[{id:'resumo',t:'Pendências',n:pd.total},{id:'compras',t:'Compras',n:pd.compras+pd.devolucoes},{id:'suporte',t:'Suporte',n:pd.suporte},{id:'grupos',t:'Grupos',n:pd.pedidosGrupo},{id:'notificacoes',t:'Notificações'}];
+  var sub=S.subCentral && subs.some(function(x){ return x.id===S.subCentral; })? S.subCentral : 'resumo';
+  function aba(id){ return id===sub? '' : ' hidden'; }
+  // itens de pendência, cada um leva à sub-aba certa
+  var itens=[];
+  pg.grupos.forEach(function(x){
+    if(x.comprasPedido) itens.push({ir:'compras', ic:I.presente, t:x.nome, s:x.comprasPedido+' pedido(s) de compra para conferir o PIX'});
+    if(x.devolucoes) itens.push({ir:'compras', ic:I.presente, t:x.nome, s:x.devolucoes+' devolução(ões) para registrar'});
+    if(x.suporte && x.suporte.pendente) itens.push({ir:'suporte', ic:I.balao, t:x.nome, s:'Mensagem de suporte aguardando resposta: “'+x.suporte.ultima+'”'});
+  });
+  if(pg.pedidos.length) itens.push({ir:'grupos', ic:I.pessoas, t:'Novos grupos', s:pg.pedidos.length+' pedido(s) para aprovar ou recusar'});
+  var ps=(g.participantes||[]).filter(function(p){ return p.confirmado; });
+  c.innerHTML=
+  '<nav class="sub-abas" id="ad-nav" aria-label="Seções da Central">'+subs.map(function(x){ return '<button type="button" data-sub-ir="'+x.id+'" aria-current="'+(x.id===sub)+'">'+esc(x.t)+cont(x.n, true)+'</button>'; }).join('')+'</nav>'+
+  '<div data-sub="resumo"'+aba('resumo')+'><div class="secao"><h2>Central do administrador geral</h2>'+
+    (itens.length? '<div class="faixa aviso-f" style="margin-bottom:10px"><div><b>Aguardando você:</b> '+esc(textoPendencias(pd))+'.</div></div><div class="lista">'+itens.map(function(x){ return '<button class="item" data-ir-sub="'+x.ir+'"><span class="av anon">'+x.ic+'</span><div class="txt"><div class="t1">'+esc(x.t)+'</div><div class="t2" style="white-space:normal">'+esc(x.s)+'</div></div><span class="seta" aria-hidden="true">›</span></button>'; }).join('')+'</div>'
+      : '<div class="cartao pilha"><div class="chip ok" style="justify-self:start">tudo em dia</div><div>Nenhuma pendência no momento. Quando chegar um pedido de compra, uma mensagem de suporte ou um pedido de novo grupo, ele aparece aqui e você recebe um aviso.</div></div>')+
+    '<div class="estado" style="margin-top:14px;grid-template-columns:repeat(3,minmax(0,1fr))"><div><div class="rotulo">Grupos</div><div class="n">'+pg.grupos.length+'</div></div><div><div class="rotulo">Sorteados</div><div class="n">'+pg.grupos.filter(function(x){ return x.sorteado; }).length+'</div></div><div><div class="rotulo">Pessoas</div><div class="n">'+pg.grupos.reduce(function(t,x){ return t+x.participantes; },0)+'</div></div></div>'+
+    '<div class="muted" style="font-size:12.5px;margin-top:8px">Só você vê esta aba. O que fica aqui é exclusivo do administrador geral; nas outras abas, você vê o mesmo que os administradores de grupo.</div>'+
+  '</div></div>'+
+  '<div data-sub="compras"'+aba('compras')+'><div class="secao"><h2>Compras de escolha e Abraço Garantido</h2>'+
+    (gsComp.length? gsComp.map(function(x){ return '<div class="cartao pilha" style="margin-bottom:12px"'+(x.id===S.gid?' id="ad-pedidos"':'')+' data-ped="'+esc(x.id)+'" data-sort="'+(x.sorteado?1:0)+'"><div class="t1" style="font-weight:700">'+esc(x.nome)+(x.comprasPedido?' <span class="chip aviso">'+x.comprasPedido+' a conferir</span>':'')+(x.devolucoes?' <span class="chip erro">'+x.devolucoes+' devolução(ões)</span>':'')+'</div><div class="ped-box">'+carregando()+'</div></div>'; }).join('')
+      : '<div class="cartao muted">Nenhuma compra ainda. Quando alguém informar que fez o PIX, o pedido aparece aqui para você conferir e liberar.</div>')+
+    '<div class="muted" style="font-size:12.5px">Os valores, a chave PIX e as vagas de cada grupo são configurados pelos administradores do grupo, na aba Admin, em Compras.</div></div></div>'+
+  '<div data-sub="suporte"'+aba('suporte')+'><div class="secao"><h2>Mensagens de suporte</h2><div class="muted" style="font-size:13.5px;margin-bottom:10px">Conversas com os administradores dos grupos. A resposta chega para eles por e-mail e nas notificações.</div>'+
+    (gsSup.length? gsSup.map(function(x){ return '<details class="cartao" style="margin-bottom:10px"'+(x.suporte.pendente || gsSup.length===1?' open':'')+'><summary style="cursor:pointer;font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+esc(x.nome)+(x.suporte.pendente?' <span class="chip aviso">aguardando resposta</span>':'')+'<span class="muted" style="font-weight:400;font-size:12.5px">'+quando(x.suporte.em)+'</span></summary><div class="pilha" style="margin-top:12px"'+(x.id===S.gid?' id="ad-sup"':'')+' data-supg="'+esc(x.id)+'">'+carregando()+'</div></details>'; }).join('')
+      : '<div class="cartao muted">Nenhuma mensagem ainda. Quando o administrador de um grupo escrever para você, a conversa aparece aqui.</div>')+
+  '</div></div>'+
+  '<div data-sub="grupos"'+aba('grupos')+'><div id="painel-geral"></div></div>'+
+  '<div data-sub="notificacoes"'+aba('notificacoes')+'><div class="secao"><h2>Notificações</h2>'+
+    '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="rotulo">Do aplicativo</div><div class="n" style="font-size:17px;padding-top:4px">'+(S.eu.pushDisponivel?'✅ ligadas':'⚠️ não configuradas')+'</div></div><div><div class="rotulo">Telegram</div><div class="n" style="font-size:17px;padding-top:4px">'+(S.eu.avisoDisponivel?'✅ ligado':'⚠️ não configurado')+'</div></div></div>'+
+    '<div class="muted" style="font-size:13.5px;margin:10px 0">Toque numa pessoa para mandar um aviso de teste e ver quais aparelhos dela estão cadastrados. Mostrando os participantes de <b>'+esc(g.nome)+'</b>; para outro grupo, abra-o em Grupos.</div>'+
+    (ps.length>6? '<input class="inp" id="cn-busca" type="search" placeholder="Buscar por nome" autocomplete="off" style="margin-bottom:10px">' : '')+
+    '<div class="lista" id="cn-lista">'+(ps.length? ps.map(function(p,i){ return '<button class="item" data-cn="'+i+'" data-busca="'+esc(p.nome.toLowerCase())+'">'+avatar(p.foto,p.nome)+'<div class="txt"><div class="t1">'+esc(p.nome)+'</div><div class="t2">Testar notificações</div></div><span class="seta" aria-hidden="true">›</span></button>'; }).join('') : '<div class="item">Nenhum participante confirmado neste grupo.</div>')+'</div>'+
+  '</div></div>';
+  ligarSubAbas(c, 'subCentral');
+  $$('[data-ir-sub]',c).forEach(function(b){ b.onclick=function(){ var t=$('[data-sub-ir="'+b.dataset.irSub+'"]',c); if(t) t.click(); }; });
+  $$('[data-ped]',c).forEach(function(cx){ desenharPedidos($('.ped-box',cx), cx.dataset.ped, cx.dataset.sort==='1'); });
+  $$('[data-supg]',c).forEach(function(bx){ chamar('suporte',{grupoId:bx.dataset.supg}).then(function(d){ desenharSuporte(bx, bx.dataset.supg, d); }).catch(function(){ bx.innerHTML='<div class="muted">Não foi possível carregar.</div>'; }); });
+  desenharPainelGeral(pg);
+  var bu=$('#cn-busca',c); if(bu) bu.addEventListener('input', function(){ var q=bu.value.trim().toLowerCase(); $$('#cn-lista [data-cn]',c).forEach(function(it){ it.hidden = q && it.dataset.busca.indexOf(q)<0; }); });
+  $$('[data-cn]',c).forEach(function(b){ var p=ps[+b.dataset.cn]; b.onclick=function(){ testarNotificacoesDe(p); }; });
+}
+function testarNotificacoesDe(p){
+  modal('<h2>Notificações de '+esc(p.nome)+'</h2><div id="tn-r">'+carregando()+'</div><button class="btn" data-fechar>Fechar</button>', function(m){
+    chamar('testarAviso',{email:p.email}).then(function(t){
+      var nenhum=/não ativada/.test(t) && /Telegram: não ativado/.test(t);
+      $('#tn-r',m).innerHTML='<div style="white-space:pre-line;font-size:14.5px;line-height:1.5">'+esc(t)+'</div><div class="muted" style="font-size:12.5px;margin-top:8px">'+(nenhum? 'Nenhum aviso foi enviado: '+esc(p.nome)+' ainda não ativou as notificações.' : esc(p.nome)+' recebe agora um aviso de teste em cada canal ativo.')+'</div>';
+    }).catch(function(e){ $('#tn-r',m).innerHTML='<div class="faixa erro">'+esc(e.message||e)+'</div>'; });
+  });
+}
+
+function atualizarPendencias(){ return chamar('eu').then(function(eu){ S.eu=eu; desenharCabecalho(); marcarCentral(); }).catch(function(){}); }
+function marcarCentral(){
+  var pd=S.eu && S.eu.pendencias, b=$('#bol-central'); if(b) b.hidden=!(pd && pd.total);
+  // com a Central aberta, atualiza os contadores das sub-abas e a lista de grupos
+  if(S.aba!=='central' || !pd || !$('#ad-nav')) return;
+  var n={resumo:pd.total, compras:pd.compras+pd.devolucoes, suporte:pd.suporte, grupos:pd.pedidosGrupo};
+  Object.keys(n).forEach(function(k){ var bt=$('#ad-nav [data-sub-ir="'+k+'"]'); if(!bt) return; var c=bt.querySelector('.cont');
+    if(!n[k]){ if(c) c.remove(); } else { if(!c){ c=document.createElement('span'); c.className='cont alerta'; bt.appendChild(document.createTextNode(' ')); bt.appendChild(c); } c.textContent=n[k]; } });
+  chamar('painelGeral').then(function(pg){ if(S.aba==='central') desenharPainelGeral(pg); }).catch(function(){});
+}
 /* ---------- compra de escolha (administração) ---------- */
 function blocoCompraAdmin(g){
-  var k=g.compra||{}; if(g.sorteado && !k.ativa && !(g.souMestre && k.historico)) return '';
+  var k=g.compra||{}; if(g.sorteado && !k.ativa) return '';
   var resumo='';
   if(k.ativa){
     resumo+='<div class="estado" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
@@ -3546,7 +3632,7 @@ function blocoCompraAdmin(g){
     if(k.aguardando && !g.sorteado) resumo+='<div class="faixa aviso-f">Há compra(s) de escolha em andamento. O sorteio fica bloqueado até que sejam concluídas ou recusadas pelo administrador geral.</div>';
   }
   return '<div class="secao"><h2>Compra de escolha e Abraço Garantido</h2>'+resumo+
-    (g.souMestre && (k.ativa || k.historico)? '<div class="cartao pilha" id="ad-pedidos"><div class="rotulo">Pedidos (só você vê os nomes)</div>'+carregando()+'</div>' : '')+
+    (g.souMestre && (k.ativa || k.historico)? '<div class="muted" style="font-size:13px">Os pedidos, a conferência dos PIX e as devoluções ficam na aba <b>Central</b>.</div>' : '')+
     (g.sorteado? '' : '<form class="cartao pilha" id="ad-cp">'+
       '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="cp-ativa" '+(k.escolhaAtiva?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes comprem a escolha de quem vão tirar</label>'+
       '<div class="muted" style="font-size:13px">Ative só se o grupo concordar. Somente o administrador geral confirma os pagamentos, e ninguém vê quem cada comprador escolheu.</div>'+
@@ -3568,7 +3654,9 @@ function ligarCompraAdmin(c){
     var d={compraAtiva:$('#cp-ativa').checked, compraValor:$('#cp-valor').value, compraLimite:$('#cp-lim').value, compraPix:$('#cp-pix').value, compraTitular:$('#cp-tit').value, compraBanco:$('#cp-banco').value, compraAgencia:$('#cp-ag').value, compraConta:$('#cp-conta').value,
       compraOptOut:$('#cp-optout').checked, abracoAtivo:$('#ab-ativa').checked, abracoValor:$('#ab-valor').value, abracoLimite:$('#ab-lim').value, abracoOptOut:$('#ab-optout').checked};
     ocupado(f.querySelector('.btn'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; aviso('Compras salvas.'); desenharAdmin(c); }); }); };
-  var box=$('#ad-pedidos'); if(!box) return;
+}
+/* pedidos de compra de um grupo (só o administrador geral): conferir PIX, liberar, recusar e registrar devoluções */
+function desenharPedidos(box, gid, sorteado){
   function desenhar(ps){
     var rot={pedido:'<span class="chip aviso">aguardando confirmação</span>', liberado:'<span class="chip">liberado, ainda não escolheu</span>', escolhido:'<span class="chip ok">escolha feita</span>'};
     function tipoChip(p){ return p.tipo==='abraco'? ' <span class="chip ouro">🤗 Abraço Garantido</span>' : ' <span class="chip">compra de escolha</span>'; }
@@ -3580,16 +3668,16 @@ function ligarCompraAdmin(c){
       return p.liberadoEm? '<span class="chip erro">pagamento confirmado: devolver</span>' : '<span class="chip aviso">conferir pagamento</span>';
     }
     box.innerHTML='<div class="rotulo">Pedidos (só você vê os nomes)</div>'+(ativos.length? '<div class="lista">'+ativos.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1" style="flex-wrap:wrap">'+esc(p.nome)+tipoChip(p)+'</div><div class="t2">pedido em '+quando(p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+rot[p.status]+
-      (p.status==='pedido' && !S.g.sorteado? '<button class="btn peq" data-lib="'+esc(p.id)+'">PIX recebido, liberar</button>':'')+(p.status!=='escolhido' && !S.g.sorteado? '<button class="btn sec peq" data-rec="'+esc(p.id)+'">Recusar</button>':'')+'</div></div>'; }).join('')+'</div>' : '<div class="muted">Nenhum pedido em andamento.</div>')+
+      (p.status==='pedido' && !sorteado? '<button class="btn peq" data-lib="'+esc(p.id)+'">PIX recebido, liberar</button>':'')+(p.status!=='escolhido' && !sorteado? '<button class="btn sec peq" data-rec="'+esc(p.id)+'">Recusar</button>':'')+'</div></div>'; }).join('')+'</div>' : '<div class="muted">Nenhum pedido em andamento.</div>')+
       '<div class="muted" style="font-size:12.5px">Confira o PIX no seu banco antes de liberar. Se recusar, o participante é avisado (sem o motivo) de que, comprovado o pagamento, o valor será devolvido.</div>'+
       (hist.length? '<div class="rotulo" style="margin-top:6px">Histórico: cancelados e recusados</div><div class="lista">'+hist.map(function(p){ return '<div class="item" style="cursor:default;flex-wrap:wrap"><div class="txt" style="flex:1 1 140px"><div class="t1" style="flex-wrap:wrap">'+esc(p.nome)+tipoChip(p)+'</div><div class="t2" style="white-space:normal">'+esc(motivo[p.motivo]||'encerrado')+' em '+quando(p.encerradoEm||p.pedidoEm)+'</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+situacao(p)+
         (p.pendente? '<button class="btn peq" data-dev="'+esc(p.id)+'">Devolução feita</button><button class="btn sec peq" data-semp="'+esc(p.id)+'">Não houve pagamento</button>':'')+'</div></div>'; }).join('')+'</div><div class="muted" style="font-size:12.5px">Ao marcar “Devolução feita”, o participante recebe um aviso por e-mail e nas notificações.</div>' : '');
-    $$('[data-lib]',box).forEach(function(b){ b.onclick=function(){ ocupado(b, function(){ return chamar('decidirCompra',{grupoId:S.gid,id:b.dataset.lib,aprovar:true}).then(function(ps2){ aviso('Escolha liberada. A pessoa foi avisada por e-mail.'); desenhar(ps2); recarregarGrupo(); atualizarPendencias(); }); }); }; });
-    $$('[data-rec]',box).forEach(function(b){ b.onclick=function(){ confirmar('Recusar este pedido?','O pedido é cancelado e vai para o histórico. O participante recebe um aviso, sem o motivo, de que, comprovado o pagamento, o valor será devolvido. Depois, registre aqui a devolução.','Recusar').then(function(ok){ if(ok) chamar('decidirCompra',{grupoId:S.gid,id:b.dataset.rec,aprovar:false}).then(function(ps2){ aviso('Pedido recusado. O participante foi avisado.'); desenhar(ps2); recarregarGrupo(); atualizarPendencias(); }).catch(falha); }); }; });
-    $$('[data-dev]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.dev; })[0]; b.onclick=function(){ confirmar('Devolução feita?','Confirme que você já devolveu o valor para '+esc(p.nome)+'. '+esc(p.nome)+' será avisado(a) por e-mail e nas notificações.','Sim, já devolvi').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:S.gid,id:p.id,situacao:'devolvido'}).then(function(ps2){ aviso('Devolução registrada. '+p.nome+' foi avisado(a).'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
-    $$('[data-semp]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.semp; })[0]; b.onclick=function(){ confirmar('Não houve pagamento?','Confirme que o PIX de '+esc(p.nome)+' não entrou na conta. Nada será enviado ao participante.','Confirmar').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:S.gid,id:p.id,situacao:'sem-pagamento'}).then(function(ps2){ aviso('Registrado.'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
+    $$('[data-lib]',box).forEach(function(b){ b.onclick=function(){ ocupado(b, function(){ return chamar('decidirCompra',{grupoId:gid,id:b.dataset.lib,aprovar:true}).then(function(ps2){ aviso('Escolha liberada. A pessoa foi avisada por e-mail.'); desenhar(ps2); if(gid===S.gid) recarregarGrupo(); atualizarPendencias(); }); }); }; });
+    $$('[data-rec]',box).forEach(function(b){ b.onclick=function(){ confirmar('Recusar este pedido?','O pedido é cancelado e vai para o histórico. O participante recebe um aviso, sem o motivo, de que, comprovado o pagamento, o valor será devolvido. Depois, registre aqui a devolução.','Recusar').then(function(ok){ if(ok) chamar('decidirCompra',{grupoId:gid,id:b.dataset.rec,aprovar:false}).then(function(ps2){ aviso('Pedido recusado. O participante foi avisado.'); desenhar(ps2); if(gid===S.gid) recarregarGrupo(); atualizarPendencias(); }).catch(falha); }); }; });
+    $$('[data-dev]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.dev; })[0]; b.onclick=function(){ confirmar('Devolução feita?','Confirme que você já devolveu o valor para '+esc(p.nome)+'. '+esc(p.nome)+' será avisado(a) por e-mail e nas notificações.','Sim, já devolvi').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:gid,id:p.id,situacao:'devolvido'}).then(function(ps2){ aviso('Devolução registrada. '+p.nome+' foi avisado(a).'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
+    $$('[data-semp]',box).forEach(function(b){ var p=ps.filter(function(x){ return x.id===b.dataset.semp; })[0]; b.onclick=function(){ confirmar('Não houve pagamento?','Confirme que o PIX de '+esc(p.nome)+' não entrou na conta. Nada será enviado ao participante.','Confirmar').then(function(ok){ if(ok) chamar('registrarDevolucao',{grupoId:gid,id:p.id,situacao:'sem-pagamento'}).then(function(ps2){ aviso('Registrado.'); desenhar(ps2); atualizarPendencias(); }).catch(falha); }); }; });
   }
-  chamar('pedidosCompra',{grupoId:S.gid}).then(desenhar).catch(function(e){ box.innerHTML=''; });
+  chamar('pedidosCompra',{grupoId:gid}).then(desenhar).catch(function(e){ box.innerHTML=''; });
 }
 
 function sortear(c, refazer){
@@ -3633,7 +3721,6 @@ function opcoesParticipante(c, p){
     (p.confirmado? '<button class="btn sec" id="op-em">Trocar e-mail (com confirmação)</button>':'')+
     (!p.confirmado && !p.ficticio? '<button class="btn sec" id="op-conv">Reenviar e-mail de confirmação</button>':'')+
     (g.sorteado && p.confirmado? '<button class="btn sec" id="op-res">Reenviar e-mail do sorteio para esta pessoa</button>':'')+
-    (S.eu.superadmin && p.confirmado? '<button class="btn sec" id="op-not">Testar as notificações desta pessoa</button>':'')+
     '<button class="btn sec" id="op-adm">'+(p.admin?'Retirar de administrador':'Tornar administrador')+'</button>'+
     (S.g.sorteioTravado?'':'<button class="btn sec" id="op-rem" style="color:var(--erro)">Remover do grupo</button>')+
     '</div><button class="btn" data-fechar>Fechar</button>', function(m, fechar){
@@ -3646,8 +3733,6 @@ function opcoesParticipante(c, p){
       });
     };
     var cv=$('#op-conv',m); if(cv) cv.onclick=function(){ ocupado(cv, function(){ return chamar('reenviarConvite',{grupoId:S.gid,email:p.email}).then(function(r){ var x=r.resultado[0]; feito(r.grupo, x.ok?'Convite reenviado.':x.erro); }); }); };
-    var on=$('#op-not',m); if(on) on.onclick=function(){ ocupado(on, function(){ return chamar('testarAviso',{email:p.email}).then(function(t){ fechar();
-      modal('<h2>Notificações de '+esc(p.nome)+'</h2><div style="white-space:pre-line;font-size:14.5px;line-height:1.5">'+esc(t)+'</div><div class="muted" style="font-size:12.5px">'+esc(p.nome)+' recebe agora um aviso de teste em cada canal ativo.</div><button class="btn" data-fechar>Fechar</button>'); }); }); };
     var rs=$('#op-res',m); if(rs) rs.onclick=function(){ ocupado(rs, function(){ return chamar('reenviarSorteio',{grupoId:S.gid,email:p.email}).then(function(r){ feito(r.grupo, 'E-mail do sorteio reenviado para '+p.nome+'.'); }); }); };
     $('#op-adm',m).onclick=function(){ var b=this; ocupado(b, function(){ return chamar('definirAdmin',{grupoId:S.gid,email:p.email,admin:!p.admin}).then(function(g2){ feito(g2, p.admin?'Deixou de ser administrador.':'Agora é administrador.'); }); }); };
     var orm=$('#op-rem',m); if(orm) orm.onclick=function(){ fechar(); confirmar('Remover '+p.nome+'?', g.sorteado? 'O sorteio já foi feito. Remover alguém <b>anula o sorteio</b> e será preciso sortear de novo.' : 'A pessoa sai do grupo e suas conversas neste grupo são apagadas.', 'Remover').then(function(s){ if(s) chamar('removerParticipante',{grupoId:S.gid,email:p.email,anularSorteio:true}).then(function(g2){ S.g=g2; desenharCabecalho(); desenharAdmin(c); aviso('Removido.'); }).catch(falha); }); };
