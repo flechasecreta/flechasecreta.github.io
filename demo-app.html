@@ -2230,7 +2230,7 @@ function estadoPush(msg){
     if(!falarPortal(msg||{flecha:'push-estado'})) return ok(null);
     var feito=false; function fim(e){ if(!feito){ feito=true; ok(e); } }
     pushOuvintes.push(fim);
-    if(!msg || msg.flecha!=='push-ativar') setTimeout(function(){ fim(null); }, 20000);
+    if(!msg || msg.flecha!=='push-ativar') setTimeout(function(){ fim(null); }, 40000);
   });
 }
 /* ao abrir o app, liga este celular à pessoa (se ela já ativou) */
@@ -3296,6 +3296,17 @@ function desenharPush(box, tgBox){
   estadoPush().then(function(st){
     if(!document.body.contains(box)) return;
     if(!st){ box.innerHTML='<div class="muted" style="font-size:13px">Não foi possível verificar as notificações deste aparelho.</div>'; telegram('Pelo Telegram'); return; }
+    // já ativou antes e o celular já deu permissão, mas o estado veio "não inscrito" (OneSignal lento ou inscrição perdida):
+    // refaz a inscrição em silêncio, sem pedir nada à pessoa (a permissão já existe)
+    if(eu.push && !st.inscrito && st.permissao==='granted' && !box.dataset.reparo){
+      box.dataset.reparo='1';
+      box.innerHTML='<div class="muted" style="font-size:13px">Conferindo as notificações deste aparelho…</div>';
+      estadoPush({flecha:'push-ativar', id:eu.pushId}).then(function(st2){ if(!document.body.contains(box)) return; mostrar(st2 || st); });
+      return;
+    }
+    mostrar(st);
+  });
+  function mostrar(st){
     var ativoAqui = st.inscrito && eu.push;
     if(ativoAqui){
       box.innerHTML='<div class="chip ok" style="justify-self:start">'+I_SINO+' notificações ativadas neste aparelho</div><div>Você recebe avisos '+papeisAviso()+'. Tocar no aviso abre o Flecha Secreta.</div>'+
@@ -3339,7 +3350,7 @@ function desenharPush(box, tgBox){
       });
     }); };
     telegram(eu.avisos?'Pelo Telegram':'Ou pelo Telegram');
-  });
+  }
 }
 function desenharTelegram(box){
   var eu=S.eu, papel=['quando chegar mensagem nas suas conversas','quando o sorteio for realizado','quando houver recado no mural','com lembretes da revelação (7 dias antes, na véspera e no dia)'];

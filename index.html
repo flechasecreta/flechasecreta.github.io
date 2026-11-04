@@ -139,23 +139,36 @@ var pushPronto = null;
 function noIconeAgora() { return !!(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)); }
 function ehIos() { return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
 function pushSuportado() { return 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window; }
-function carregarPush() {
-  if (pushPronto) return pushPronto;
-  pushPronto = new Promise(function (ok, falhou) {
-    if (!PUSH_REAL) return ok(null);
-    if (!pushSuportado()) return falhou(new Error('sem suporte'));
+/* Carrega e inicia o OneSignal uma única vez. Uma demora NÃO fica "presa": a próxima chamada espera de novo
+   pela mesma inicialização (que continua em andamento), em vez de desistir até o app ser fechado. */
+var osInicio = null, osScript = false;
+function iniciarOneSignal() {
+  if (osInicio) return osInicio;
+  osInicio = new Promise(function (ok, falhou) {
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(function (OneSignal) {
       return OneSignal.init({ appId: ONESIGNAL_APP, safari_web_id: ONESIGNAL_SAFARI, autoResubscribe: true, notifyButton: { enable: false } })
-        .then(function () { ok(OneSignal); }, falhou);
+        .then(function () { ok(OneSignal); }, function (e) { if (/already initialized/i.test(String(e))) ok(OneSignal); else falhou(e); });
     });
-    var sc = document.createElement('script'); sc.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'; sc.defer = true;
-    sc.onerror = function () { falhou(new Error('não carregou')); };
-    document.head.appendChild(sc);
-    setTimeout(function () { falhou(new Error('demorou')); }, 15000);
+    if (!osScript) {
+      osScript = true;
+      var sc = document.createElement('script'); sc.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'; sc.defer = true;
+      sc.onerror = function () { osScript = false; osInicio = null; sc.remove(); falhou(new Error('não carregou')); };
+      document.head.appendChild(sc);
+    }
   });
-  pushPronto.catch(function () {});
-  return pushPronto;
+  osInicio.catch(function () {});
+  return osInicio;
+}
+function carregarPush(ms) {
+  if (!PUSH_REAL) return Promise.resolve(null);
+  if (!pushSuportado()) return Promise.reject(new Error('sem suporte'));
+  return Promise.race([iniciarOneSignal(), new Promise(function (_, falhou) { setTimeout(function () { falhou(new Error('demorou')); }, ms || 30000); })]);
+}
+/* inscrito = permissão concedida e inscrição ativa no OneSignal (optedIn, ou já com identificador e token) */
+function inscritoAgora(OS) {
+  var sb = OS && OS.User && OS.User.PushSubscription;
+  return Notification.permission === 'granted' && !!(sb && (sb.optedIn || (sb.id && sb.token)));
 }
 var demoPush = { permissao: 'default', inscrito: false };
 function estadoPush() {
@@ -164,8 +177,12 @@ function estadoPush() {
   if (!base.suportado) { base.permissao = 'indisponivel'; base.inscrito = false; return Promise.resolve(base); }
   base.permissao = Notification.permission;
   return carregarPush().then(function (OS) {
-    base.inscrito = !!(OS.User && OS.User.PushSubscription && OS.User.PushSubscription.optedIn) && Notification.permission === 'granted';
-    return base;
+    base.inscrito = inscritoAgora(OS);
+    if (base.inscrito || base.permissao !== 'granted') return base;
+    // logo depois de abrir, a inscrição pode ainda estar sendo lida: confere de novo por alguns segundos
+    return new Promise(function (ok) {
+      var n = 0; (function ver() { if (inscritoAgora(OS) || ++n > 8) { base.inscrito = inscritoAgora(OS); ok(base); } else setTimeout(ver, 500); })();
+    });
   }, function () { base.inscrito = false; base.erro = true; return base; });
 }
 function perguntarPush(aoTocar) {
@@ -227,7 +244,7 @@ function tratarPush(m, fonte, origem) {
     });
   }
 }
-if (PUSH_REAL && pushSuportado() && Notification.permission === 'granted') carregarPush();
+if (PUSH_REAL && pushSuportado() && Notification.permission === 'granted') carregarPush().catch(function () {});
 
 /* No Safari (fora do ícone da tela de início), uma dica rápida */
 (function () {
