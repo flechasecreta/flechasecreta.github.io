@@ -605,7 +605,8 @@ var Core = (function () {
   /* endereço que o toque no aviso abre: a aba (e a conversa) de onde veio a novidade */
   function urlDestino(d) {
     var u = P.urlApp(); if (!d || !d.ir) return u;
-    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'ir=' + d.ir + (d.g ? '&g=' + encodeURIComponent(d.g) : '') + (d.c ? '&c=' + encodeURIComponent(d.c) : '');
+    // atenção: o Google Apps Script reserva os parâmetros "c" e "sid"; por isso os nomes são ir, gr e cv
+    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'ir=' + d.ir + (d.g ? '&gr=' + encodeURIComponent(d.g) : '') + (d.c ? '&cv=' + encodeURIComponent(d.c) : '');
   }
   function enviarPush(emails, titulo, msg, destino) {
     if (!emails.length || !pushAtivo()) return null;
