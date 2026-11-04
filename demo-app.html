@@ -243,6 +243,24 @@ main{padding-bottom:calc(90px + var(--sab))}
 .part.com-desejo .tem-desejo svg{width:15px;height:15px}
 .part.sem-desejo{border-style:dashed}
 .part.sem-desejo .av{opacity:.75}
+.part.av-c1{border:2px solid var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--cartao))}
+.part.av-c2,.part.av-c3{border:1.5px solid color-mix(in srgb,var(--ok) 60%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--cartao))}
+.part.av-c4{border-style:dashed}
+.part.av-nc{opacity:.6}
+.av-linha{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--linha);background:var(--cartao);color:var(--tinta);border-radius:12px;padding:9px 12px;font-family:inherit;font-size:14px;cursor:pointer}
+.av-linha .av-num{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;background:var(--ok)}
+.av-linha.av-l2 .av-num,.av-linha.av-l3 .av-num{background:color-mix(in srgb,var(--ok) 65%,#fff)}
+.av-linha.av-l4 .av-num{background:var(--tinta-2)}
+.av-linha .av-txt{flex:1;min-width:0}
+.av-linha .av-q{font-size:18px}
+.av-linha.av-l1{background:color-mix(in srgb,var(--ok) 14%,var(--cartao));border-color:color-mix(in srgb,var(--ok) 50%,transparent)}
+.av-linha.av-l2,.av-linha.av-l3{background:color-mix(in srgb,var(--ok) 7%,var(--cartao))}
+.av-linha[aria-pressed="true"]{outline:2px solid var(--mata);outline-offset:1px}
+.barra-av{height:8px;border-radius:99px;background:var(--linha);overflow:hidden;display:flex}
+.barra-av i{display:block;height:100%}
+.barra-av .av-b1{background:var(--ok)}.barra-av .av-b2,.barra-av .av-b3{background:color-mix(in srgb,var(--ok) 60%,#fff)}
+.chip-f{border:1px solid var(--linha);background:var(--cartao);color:var(--tinta);border-radius:99px;padding:6px 12px;font-family:inherit;font-weight:600;font-size:13px;line-height:1.2;cursor:pointer}
+.chip-f[aria-pressed="true"]{background:var(--mata);color:#fff;border-color:var(--mata)}
 
 /* ---------- admin ---------- */
 .tabela-wrap{overflow-x:auto;border:1px solid var(--linha);border-radius:var(--raio);background:var(--cartao)}
@@ -1428,6 +1446,15 @@ var Core = (function () {
     T('ConvitesGrupo').update(function (x) { return x.token === a.convite && !x.usadoEm; }, { expira: new Date(Date.now() - 1000).toISOString() });
     return api.painelGeral(a);
   };
+  /* resumo das notificações de um grupo (só o administrador geral): quem tem aviso pelo app e/ou pelo Telegram */
+  api.statusAvisos = function (a) {
+    var u = sessao(a.token); exigirSuper(u);
+    var us = {}; T('Usuarios').all().forEach(function (x) { us[norm(x.email)] = x; });
+    var r = {};
+    membros(a.grupoId).forEach(function (m) { var x = us[norm(m.email)] || {};
+      r[norm(m.email)] = { app: !!x.push, telegram: /^tg:/.test(x.avisoTopico || '') }; });
+    return { pessoas: r, pushDisponivel: pushAtivo(), telegramDisponivel: !!(P.telegramBot && P.telegramBot()) };
+  };
   api.painelGeral = function (a) {
     var u = sessao(a.token); exigirSuper(u);
     var ms = T('Membros').all();
@@ -2059,7 +2086,7 @@ var Core = (function () {
   function chamar(nome, args) {
     if (!api.hasOwnProperty(nome)) return { erro: 'Função desconhecida.' };
     try {
-      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos)$/.test(nome);
+      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|statusAvisos)$/.test(nome);
       var r = escrita && P.travar ? P.travar(function () { return api[nome](args || {}); }) : api[nome](args || {});
       return { ok: nome === 'fotos' ? r : trocarFotos(r) };
     } catch (e) {
@@ -3628,17 +3655,55 @@ function desenharCentral(c, pg){
   '<div data-sub="grupos"'+aba('grupos')+'><div id="painel-geral"></div></div>'+
   '<div data-sub="notificacoes"'+aba('notificacoes')+'><div class="secao"><h2>Notificações</h2>'+
     '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="rotulo">Do aplicativo</div><div class="n" style="font-size:17px;padding-top:4px">'+(S.eu.pushDisponivel?'✅ ligadas':'⚠️ não configuradas')+'</div></div><div><div class="rotulo">Telegram</div><div class="n" style="font-size:17px;padding-top:4px">'+(S.eu.avisoDisponivel?'✅ ligado':'⚠️ não configurado')+'</div></div></div>'+
-    '<div class="muted" style="font-size:13.5px;margin:10px 0">Toque numa pessoa para mandar um aviso de teste e ver quais aparelhos dela estão cadastrados. Mostrando os participantes de <b>'+esc(g.nome)+'</b>; para outro grupo, abra-o em Grupos.</div>'+
-    (ps.length>6? '<input class="inp" id="cn-busca" type="search" placeholder="Buscar por nome" autocomplete="off" style="margin-bottom:10px">' : '')+
-    '<div class="lista" id="cn-lista">'+(ps.length? ps.map(function(p,i){ return '<button class="item" data-cn="'+i+'" data-busca="'+esc(p.nome.toLowerCase())+'">'+avatar(p.foto,p.nome)+'<div class="txt"><div class="t1">'+esc(p.nome)+'</div><div class="t2">Testar notificações</div></div><span class="seta" aria-hidden="true">›</span></button>'; }).join('') : '<div class="item">Nenhum participante confirmado neste grupo.</div>')+'</div>'+
+    '<div id="cn-resumo" style="margin-top:12px">'+carregando()+'</div>'+
   '</div></div>';
   ligarSubAbas(c, 'subCentral');
   $$('[data-ir-sub]',c).forEach(function(b){ b.onclick=function(){ var t=$('[data-sub-ir="'+b.dataset.irSub+'"]',c); if(t) t.click(); }; });
   $$('[data-ped]',c).forEach(function(cx){ desenharPedidos($('.ped-box',cx), cx.dataset.ped, cx.dataset.sort==='1'); });
   $$('[data-supg]',c).forEach(function(bx){ chamar('suporte',{grupoId:bx.dataset.supg}).then(function(d){ desenharSuporte(bx, bx.dataset.supg, d); }).catch(function(){ bx.innerHTML='<div class="muted">Não foi possível carregar.</div>'; }); });
   desenharPainelGeral(pg);
-  var bu=$('#cn-busca',c); if(bu) bu.addEventListener('input', function(){ var q=bu.value.trim().toLowerCase(); $$('#cn-lista [data-cn]',c).forEach(function(it){ it.hidden = q && it.dataset.busca.indexOf(q)<0; }); });
-  $$('[data-cn]',c).forEach(function(b){ var p=ps[+b.dataset.cn]; b.onclick=function(){ testarNotificacoesDe(p); }; });
+  desenharResumoAvisos($('#cn-resumo',c), g);
+}
+/* Central → Notificações: resumo do grupo e cartões coloridos (verde = tem aviso ativo) */
+function desenharResumoAvisos(box, g){
+  if(!box) return;
+  chamar('statusAvisos',{grupoId:g.id}).then(function(r){
+    if(!document.body.contains(box)) return;
+    // 4 padrões: 1 = celular e Telegram ativas; 2 = só celular; 3 = só Telegram; 4 = nenhuma
+    var CAT={1:{t:'Celular e Telegram ativas',ic:'📱✈️'},2:{t:'Celular ativa e Telegram inativa',ic:'📱'},3:{t:'Celular inativa e Telegram ativa',ic:'✈️'},4:{t:'Celular e Telegram inativas',ic:'🔕'}};
+    var ps=g.participantes.map(function(p){ var k=r.pessoas[String(p.email||'').toLowerCase()]||{}, app=!!k.app, tg=!!k.telegram;
+      return {p:p, app:app, tg:tg, conf:p.confirmou!==false, cat: app&&tg?1 : app?2 : tg?3 : 4}; });
+    var n={1:0,2:0,3:0,4:0}; ps.forEach(function(x){ n[x.cat]++; });
+    var recebem=n[1]+n[2]+n[3], total=ps.length, nc=ps.filter(function(x){ return !x.conf; }).length;
+    var filtro='todos';
+    function card(x,i){
+      var b=x.cat===4? '<span class="chip">'+(x.conf?'sem notificações':'não confirmou')+'</span>'
+        : (x.app?'<span class="chip ok">📱 celular</span>':'')+(x.tg?'<span class="chip ok">✈️ Telegram</span>':'');
+      return '<button class="part av-c'+x.cat+(x.conf?'':' av-nc')+'" data-cn="'+i+'" data-f="'+x.cat+'" data-busca="'+esc(x.p.nome.toLowerCase())+'">'+avatar(x.p.foto,x.p.nome,'g')+'<div class="nome">'+esc(x.p.nome)+'</div><div class="badges" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center">'+b+'</div></button>';
+    }
+    box.innerHTML=
+      '<div class="cartao pilha" style="gap:8px">'+
+        '<div class="rotulo">Notificações dos participantes</div>'+
+        [1,2,3,4].map(function(k){ return '<button type="button" class="av-linha av-l'+k+'" data-filtro="'+k+'" aria-pressed="false"><span class="av-num">'+k+'</span><span class="av-txt">'+CAT[k].ic+' '+CAT[k].t+'</span><b class="av-q">'+n[k]+'</b></button>'; }).join('')+
+        '<div class="barra-av" aria-hidden="true">'+[1,2,3].map(function(k){ return '<i class="av-b'+k+'" style="width:'+(total? n[k]*100/total:0)+'%"></i>'; }).join('')+'</div>'+
+        '<div style="font-size:14px"><b style="color:var(--ok)">Recebem notificações (1 + 2 + 3): '+recebem+' de '+total+'</b></div>'+
+        '<div class="muted" style="font-size:12.5px">Total: '+n[1]+' + '+n[2]+' + '+n[3]+' + '+n[4]+' = '+total+' participantes'+(nc? ' (no grupo 4, '+nc+' ainda não confirmaram a participação)' : '')+'. Toque numa linha para filtrar.</div>'+
+      '</div>'+
+      '<div class="linha-acoes" style="margin:12px 0 10px;flex-wrap:wrap"><button class="chip-f" data-filtro="todos" aria-pressed="true">Todos ('+total+')</button>'+[1,2,3,4].map(function(k){ return '<button class="chip-f" data-filtro="'+k+'" aria-pressed="false">'+k+' ('+n[k]+')</button>'; }).join('')+'</div>'+
+      (total>8? '<input class="inp" id="cn-busca" type="search" placeholder="Buscar por nome" autocomplete="off" style="margin-bottom:10px">' : '')+
+      '<div class="grade-part" id="cn-lista">'+ps.map(card).join('')+'</div>'+
+      (n[4]? '<button class="btn sec peq" id="cn-copiar" style="margin-top:12px">Copiar os nomes do grupo 4 (sem notificações)</button>' : '')+
+      '<div class="muted" style="font-size:12.5px;margin-top:10px">Toque numa pessoa confirmada para mandar um aviso de teste e ver quais aparelhos dela estão cadastrados. Mostrando <b>'+esc(g.nome)+'</b>; para outro grupo, abra-o em Grupos.</div>';
+    function aplicar(){ var q=(($('#cn-busca',box)||{}).value||'').trim().toLowerCase();
+      $$('[data-filtro]',box).forEach(function(x){ x.setAttribute('aria-pressed', String(x.dataset.filtro===filtro)); });
+      $$('#cn-lista [data-cn]',box).forEach(function(it){ it.hidden=(filtro!=='todos' && it.dataset.f!==filtro) || (q && it.dataset.busca.indexOf(q)<0); }); }
+    $$('[data-filtro]',box).forEach(function(b){ b.onclick=function(){ filtro = (filtro===b.dataset.filtro && b.dataset.filtro!=='todos')? 'todos' : b.dataset.filtro; aplicar(); }; });
+    var bu=$('#cn-busca',box); if(bu) bu.addEventListener('input', aplicar);
+    $$('[data-cn]',box).forEach(function(b){ var x=ps[+b.dataset.cn]; b.onclick=function(){ if(!x.conf){ aviso(x.p.nome+' ainda não confirmou a participação.'); return; } testarNotificacoesDe(x.p); }; });
+    var cp=$('#cn-copiar',box); if(cp) cp.onclick=function(){ var t=ps.filter(function(x){ return x.cat===4; }).map(function(x){ return x.p.nome; }).join(', ');
+      function mostrar(){ modal('<h2>Sem notificações</h2><div>'+esc(t)+'</div><button class="btn" data-fechar>Fechar</button>'); }
+      try{ navigator.clipboard.writeText(t).then(function(){ aviso('Nomes copiados. É só colar no WhatsApp.'); }, mostrar); }catch(e){ mostrar(); } };
+  }).catch(function(e){ box.innerHTML='<div class="faixa erro">'+esc(e.message||e)+'</div>'; });
 }
 function testarNotificacoesDe(p){
   modal('<h2>Notificações de '+esc(p.nome)+'</h2><div id="tn-r">'+carregando()+'</div><button class="btn" data-fechar>Fechar</button>', function(m){
