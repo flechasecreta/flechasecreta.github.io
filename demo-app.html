@@ -134,6 +134,9 @@ main{padding-bottom:calc(90px + var(--sab))}
 .sub-abas.mais{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent)}
 .sub-abas button{flex:none;border:1.5px solid var(--linha);background:var(--cartao);color:var(--tinta-2);border-radius:999px;padding:7px 13px;font-weight:600;font-size:13.5px;cursor:pointer;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
 .sub-abas button[aria-current="true"]{background:var(--mata-2);border-color:var(--mata-2);color:var(--sobre-mata)}
+.cp-tipo .cp-tit{font-weight:700;font-size:16.5px}
+.cp-liga{display:flex;gap:10px;align-items:flex-start;font-weight:600;font-size:14.5px;cursor:pointer}
+.cp-liga input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--mata-2)}
 .sub-abas .cont{font-size:11.5px;background:color-mix(in srgb,currentColor 14%,transparent);border-radius:999px;padding:0 7px;line-height:18px}
 .sub-abas .cont.alerta{background:var(--brasa);color:#fff}
 .filtro-part{display:grid;gap:8px}
@@ -344,7 +347,7 @@ var APP_NOME = 'Flecha Secreta';
 var APP_LEMA = 'o amigo secreto da sua turma';
 
 var TABELAS = {
-  Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira', 'push'],
+  Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira', 'push', 'semPrevia'],
   Grupos: ['id', 'nome', 'logo', 'valorMinimo', 'dataRevelacao', 'horaRevelacao', 'localNome', 'localEndereco', 'auditor', 'admins', 'sorteioEm', 'sorteioCodigo', 'trapaca', 'trapacaNota', 'criadoPor', 'criadoEm',
     'compraAtiva', 'compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix', 'compraLimite', 'edicaoDe', 'telefoneLiberado',
     'abracoAtivo', 'abracoValor', 'abracoLimite', 'abracoOptOut', 'compraOptOut'],
@@ -599,20 +602,26 @@ var Core = (function () {
   /* Avisa várias pessoas de uma vez (sorteio, mural, lembretes). Só quem ativou o Telegram recebe. */
   /* Notificação do próprio aplicativo (OneSignal), para quem ativou no Perfil */
   function pushAtivo() { return !!(P.pushAtivo && P.pushAtivo()); }
-  function enviarPush(emails, titulo, msg) {
-    if (!emails.length || !pushAtivo()) return null;
-    try { return P.push(emails.map(Cripto.idPush), titulo, msg, P.urlApp()); } catch (e) { return [{ codigo: 0, corpo: { erro: String(e) } }]; }
+  /* endereço que o toque no aviso abre: a aba (e a conversa) de onde veio a novidade */
+  function urlDestino(d) {
+    var u = P.urlApp(); if (!d || !d.ir) return u;
+    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'ir=' + d.ir + (d.g ? '&g=' + encodeURIComponent(d.g) : '') + (d.c ? '&c=' + encodeURIComponent(d.c) : '');
   }
-  function avisarVarios(emails, titulo, msg) {
+  function enviarPush(emails, titulo, msg, destino) {
+    if (!emails.length || !pushAtivo()) return null;
+    try { return P.push(emails.map(Cripto.idPush), titulo, msg, urlDestino(destino)); } catch (e) { return [{ codigo: 0, corpo: { erro: String(e) } }]; }
+  }
+  function avisarVarios(emails, titulo, msg, destino) {
     var chats = [], push = [], pessoas = {};
     T('Usuarios').all().forEach(function (u) {
       if (emails.indexOf(u.email) < 0) return;
       if (/^tg:/.test(u.avisoTopico)) { chats.push(u.avisoTopico.substr(3)); pessoas[u.email] = 1; }
       if (u.push) { push.push(u.email); pessoas[u.email] = 1; }
     });
-    enviarPush(push, titulo, msg);
+    enviarPush(push, titulo, msg, destino);
     if (chats.length && P.avisar) {
-      try { if (P.avisarVarios) P.avisarVarios(chats, titulo, msg, P.urlApp()); else chats.forEach(function (c) { P.avisar(c, titulo, msg, P.urlApp()); }); } catch (e) { }
+      var url = urlDestino(destino);
+      try { if (P.avisarVarios) P.avisarVarios(chats, titulo, msg, url); else chats.forEach(function (c) { P.avisar(c, titulo, msg, url); }); } catch (e) { }
     }
     return Object.keys(pessoas).length;
   }
@@ -620,11 +629,11 @@ var Core = (function () {
   function primeiraVez(chave, segundos) { return P.umaVez ? P.umaVez(chave, segundos) : true; }
   function resumo(t, n) { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.substr(0, n - 1) + '…' : t; }
 
-  function avisar(email, titulo, msg) {
+  function avisar(email, titulo, msg, destino) {
     try {
       var u = usuario(email); if (!u) return;
-      if (u.push) enviarPush([u.email], titulo, msg);
-      if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), titulo, msg, P.urlApp());
+      if (u.push) enviarPush([u.email], titulo, msg, destino);
+      if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), titulo, msg, urlDestino(destino));
     } catch (e) { }
   }
   function formatarTelefone(t) {
@@ -858,7 +867,7 @@ var Core = (function () {
       telefoneLiberado: telefoneLiberadoPara(u.email), avisos: /^tg:/.test(u.avisoTopico) ? 'ativo' : /^pend:/.test(u.avisoTopico) ? 'pendente' : '',
       avisoLink: /^pend:/.test(u.avisoTopico) && P.telegramBot && P.telegramBot() ? 'https://t.me/' + P.telegramBot() + '?start=' + u.avisoTopico.substr(5) : '',
       avisoDisponivel: !!(P.telegramBot && P.telegramBot()),
-      pushDisponivel: pushAtivo(), push: !!u.push, pushId: pushAtivo() ? Cripto.idPush(u.email) : '',
+      pushDisponivel: pushAtivo(), push: !!u.push, previa: u.semPrevia !== 'sim', pushId: pushAtivo() ? Cripto.idPush(u.email) : '',
       emailNovo: (u.emailNovo && new Date(u.tokenEmailExpira).getTime() > Date.now()) ? u.emailNovo : '' };
   };
 
@@ -947,6 +956,12 @@ var Core = (function () {
     else if (a.canal === 'telegram') { if (/^tg:/.test(u.avisoTopico) && P.avisar) P.avisar(u.avisoTopico.substr(3), 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.', P.urlApp()); }
     else avisar(u.email, 'Teste de notificação ✅', 'Tudo certo! Os avisos do amigo secreto vão chegar assim.');
     return 'Notificação de teste enviada. Ela deve chegar em alguns segundos.';
+  };
+  /* prévia do texto das mensagens das Conversas nos avisos (ligada por padrão) */
+  api.preferenciaPrevia = function (a) {
+    var u = sessao(a.token);
+    T('Usuarios').update(function (x) { return x.email === u.email; }, { semPrevia: a.previa ? '' : 'sim' });
+    return api.eu({ token: a.token });
   };
   /* o celular informa que a pessoa ativou (ou desativou) as notificações do aplicativo */
   api.registrarPush = function (a) {
@@ -1213,11 +1228,14 @@ var Core = (function () {
     var dados = { lado: c.a === u.email ? 'a' : 'b', texto: t.substr(0, 2000) };
     if (a.respostaA) { if (!mensagensDe(x.g.id, c.id).some(function (m) { return m.id === a.respostaA; })) erro('A mensagem que você quer responder foi apagada.'); dados.resp = a.respostaA; }
     T('Mensagens').insert({ id: Cripto.token().substr(0, 16), grupoId: x.g.id, conversaId: c.id, dados: Cripto.cifrar(dados), em: agora() });
-    // aviso a quem recebeu: nunca revela o amigo secreto nem remetente anônimo, e não mostra o texto
+    // aviso a quem recebeu: nunca revela o amigo secreto nem remetente anônimo; mostra o começo do texto, salvo se a pessoa desligou a prévia no Perfil
     var souA = c.a === u.email, dest = souA ? c.b : c.a, titulo;
     if (c.tipo === 'amigo') titulo = souA ? 'Quem te tirou mandou uma mensagem 🎁' : 'Seu amigo secreto respondeu 🎯';
     else titulo = (souA && c.aAnon) ? 'Você recebeu uma mensagem anônima 🤫' : nomeDe(u.email) + ' te mandou uma mensagem';
-    if (primeiraVez('msg:' + c.id + ':' + dest, 60)) avisar(dest, titulo, 'Abra o Flecha Secreta, na aba Conversas, para ler.');
+    if (primeiraVez('msg:' + c.id + ':' + dest, 60)) {
+      var ud = usuario(dest), previa = !(ud && ud.semPrevia === 'sim');
+      avisar(dest, titulo, previa ? '"' + resumo(t, 100) + '"' : 'Abra o Flecha Secreta, na aba Conversas, para ler.', { ir: 'conversas', g: x.g.id, c: c.id });
+    }
     return api.mensagens(a);
   };
   /* Editar (até 10 minutos depois) e apagar as próprias mensagens: conversas e mural */
@@ -1303,7 +1321,7 @@ var Core = (function () {
     // recado do administrador sempre avisa; os demais no máximo um aviso a cada 30 minutos por grupo
     if (oficial || primeiraVez('mural:' + x.g.id, 600)) {
       var quem = a.anonimo ? 'Recado anônimo' : (oficial ? 'Recado do administrador ' + nomeDe(u.email) : 'Recado de ' + nomeDe(u.email));
-      avisarVarios(outros, oficial ? '📣 ' + quem : 'Novo recado no mural', (oficial ? '' : quem + ': ') + '"' + resumo(t, 140) + '"');
+      avisarVarios(outros, oficial ? '📣 ' + quem : 'Novo recado no mural', (oficial ? '' : quem + ': ') + '"' + resumo(t, 140) + '"', { ir: 'mural', g: x.g.id });
     }
     return api.mural(a);
   };
@@ -3169,7 +3187,7 @@ function abaAjuda(c){
     faq('Posso trocar de amigo secreto?', '<div>Não. O sorteio é definitivo e qualquer troca desmancha o círculo, o que o Auditor percebe na revelação.</div>')+
     faq('Mandei uma mensagem errada. Dá para corrigir?', '<div>Sim. Toque na mensagem (nas Conversas) ou em <b>Editar</b> (no Mural) para corrigir até 10 minutos depois de enviar. Depois disso, você ainda pode apagar, desde que ninguém tenha respondido a mensagem.</div>')+
     faq('Mudei de e-mail.', '<div>No <b>Perfil</b>, toque em <b>Trocar meu e-mail</b>. Enviamos um link para o e-mail novo e a troca acontece quando você clicar nele. Senha, conversas e amigo secreto continuam iguais.</div>')+
-    faq('Como recebo avisos no celular?', '<div>Abra o Flecha Secreta pelo <b>ícone na tela de início</b>. No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b>, depois em <b>Permitir notificações</b> e confirme a pergunta do celular. Pronto: os avisos chegam como os de qualquer aplicativo, e tocar neles abre o Flecha Secreta. No iPhone, é preciso o iOS 16.4 ou mais novo (iPhone 8 em diante, atualizado). Quem preferir pode usar o Telegram, na mesma seção. Os avisos nunca mostram o nome do seu amigo secreto.</div>')+
+    faq('Como recebo avisos no celular?', '<div>Abra o Flecha Secreta pelo <b>ícone na tela de início</b>. No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b>, depois em <b>Permitir notificações</b> e confirme a pergunta do celular. Pronto: os avisos chegam como os de qualquer aplicativo, e tocar neles abre o Flecha Secreta. No iPhone, é preciso o iOS 16.4 ou mais novo (iPhone 8 em diante, atualizado). Quem preferir pode usar o Telegram, na mesma seção. Os avisos de mensagem mostram as primeiras palavras do texto; para esconder, desmarque <b>Mostrar uma prévia das mensagens nos avisos</b>, na mesma seção. Os avisos nunca mostram o nome do seu amigo secreto.</div>')+
     faq('Ainda tenho dúvidas.', '<div>No <b>Perfil</b>, use <b>Fale com os administradores</b>: sua mensagem chega para quem organiza o grupo, e a resposta aparece ali mesmo.</div>')+
   '</div></div>';
   c.innerHTML=h;
@@ -3246,8 +3264,17 @@ function mascaraTelefone(inp){
     inp.value=r; });
 }
 function desenharAvisos(box){
-  box.innerHTML='<div class="pilha" id="av-push"></div><div class="pilha" id="av-tg"></div>';
+  box.innerHTML='<div class="pilha" id="av-push"></div><div class="pilha" id="av-tg"></div><div id="av-prev"></div>';
   desenharPush($('#av-push',box), $('#av-tg',box));
+  desenharPrevia($('#av-prev',box));
+}
+/* prévia das mensagens nos avisos: aparece quando a pessoa recebe avisos por algum canal */
+function desenharPrevia(box){
+  var eu=S.eu; if(!(eu.push || eu.avisos==='ativo')){ box.innerHTML=''; return; }
+  box.innerHTML='<div style="border-top:1px solid var(--linha);padding-top:12px;margin-top:4px" class="pilha"><label class="cp-liga"><input type="checkbox" id="av-previa" '+(eu.previa!==false?'checked':'')+'> <span>Mostrar uma prévia das mensagens nos avisos</span></label>'+
+    '<div class="muted" style="font-size:13px">O aviso de uma mensagem nas Conversas traz as primeiras palavras dela. Desmarque se preferir mais sigilo: o aviso vai dizer só que chegou uma mensagem, sem mostrar o texto na tela do celular. Quem enviou continua oculto quando a mensagem é anônima.</div></div>';
+  var cb=$('#av-previa',box); cb.onchange=function(){ var v=cb.checked; cb.disabled=true;
+    chamar('preferenciaPrevia',{previa:v}).then(function(e2){ S.eu=e2; aviso(v?'Pronto: os avisos vão mostrar uma prévia das mensagens.':'Pronto: os avisos não vão mais mostrar o texto das mensagens.'); }).catch(function(e){ cb.checked=!v; falha(e); }).then(function(){ cb.disabled=false; }); };
 }
 function papeisAviso(){
   var eu=S.eu, papel=['quando chegar mensagem nas suas conversas','quando o sorteio for realizado','quando houver recado no mural','com lembretes da revelação'];
@@ -3623,37 +3650,57 @@ function marcarCentral(){
 /* ---------- compra de escolha (administração) ---------- */
 function blocoCompraAdmin(g){
   var k=g.compra||{}; if(g.sorteado && !k.ativa) return '';
-  var resumo='';
-  if(k.ativa){
-    resumo+='<div class="estado" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
-      '<div><div class="rotulo">Vagas</div><div class="n">'+(k.escolhaAtiva?k.limite:'—')+'</div>'+(k.abracoAtiva?'<div class="muted" style="font-size:12px">+ '+k.abracoLimite+' abraço(s)</div>':'')+'</div>'+
-      '<div><div class="rotulo">Escolhas feitas</div><div class="n">'+(k.feitas!=null? k.feitas : '<span style="font-size:14px" class="muted">no dia da revelação</span>')+'</div>'+(k.abracos!=null && k.abracoAtiva?'<div class="muted" style="font-size:12px">'+k.abracos+' abraço(s) garantido(s)</div>':'')+'</div>'+
-      '<div><div class="rotulo">Arrecadado</div><div class="n" style="font-size:20px;padding-top:4px">'+(k.arrecadado!=null? (k.arrecadado? 'R$ '+esc(k.arrecadado) : '—') : '<span style="font-size:14px" class="muted">no dia da revelação</span>')+'</div></div></div>';
-    if(k.aguardando && !g.sorteado) resumo+='<div class="faixa aviso-f">Há compra(s) de escolha em andamento. O sorteio fica bloqueado até que sejam concluídas ou recusadas pelo administrador geral.</div>';
+  var depois='<span style="font-size:14px" class="muted">no dia da revelação</span>';
+  function marcador(id, marcado, txt){ return '<label class="cp-liga"><input type="checkbox" id="'+id+'" '+(marcado?'checked':'')+'> <span>'+txt+'</span></label>'; }
+  function numeros(feitas, limite){ return '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:0"><div><div class="rotulo">Vagas</div><div class="n">'+limite+'</div></div><div><div class="rotulo">Feitas</div><div class="n">'+(feitas!=null? feitas : depois)+'</div></div></div>'; }
+  var h='<div class="secao"><h2>Compras</h2><div class="muted" style="font-size:13.5px;margin:-4px 0 12px">Duas brincadeiras opcionais, pagas por PIX, que ajudam a bancar a festa. Ative só o que o grupo combinou.</div>';
+  if(k.ativa && k.arrecadado!=null) h+='<div class="faixa info" style="margin-bottom:12px"><div><b>Total arrecadado:</b> '+(k.arrecadado? 'R$ '+esc(k.arrecadado) : 'R$ 0,00')+'</div></div>';
+  if(k.aguardando && !g.sorteado) h+='<div class="faixa aviso-f" style="margin-bottom:12px">Há compra(s) em andamento. O sorteio fica bloqueado até que sejam concluídas ou recusadas pelo administrador geral.</div>';
+  if(g.souMestre && (k.ativa || k.historico)) h+='<div class="muted" style="font-size:13px;margin-bottom:12px">Os pedidos, a conferência dos PIX e as devoluções ficam na aba <b>Central</b>.</div>';
+  if(g.sorteado){
+    // depois do sorteio: só os números
+    if(k.escolhaAtiva) h+='<div class="cartao pilha cp-tipo"><div class="cp-tit">🎯 Compra de escolha</div>'+numeros(k.feitas, k.limite)+'</div>';
+    if(k.abracoAtiva) h+='<div class="cartao pilha cp-tipo"><div class="cp-tit">🤗 Abraço Garantido</div>'+numeros(k.abracos, k.abracoLimite)+'</div>';
+    return h+'</div>';
   }
-  return '<div class="secao"><h2>Compra de escolha e Abraço Garantido</h2>'+resumo+
-    (g.souMestre && (k.ativa || k.historico)? '<div class="muted" style="font-size:13px">Os pedidos, a conferência dos PIX e as devoluções ficam na aba <b>Central</b>.</div>' : '')+
-    (g.sorteado? '' : '<form class="cartao pilha" id="ad-cp">'+
-      '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="cp-ativa" '+(k.escolhaAtiva?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes comprem a escolha de quem vão tirar</label>'+
-      '<div class="muted" style="font-size:13px">Ative só se o grupo concordar. Somente o administrador geral confirma os pagamentos, e ninguém vê quem cada comprador escolheu.</div>'+
-      '<div class="grade2"><label class="campo">Valor da escolha (R$)<input class="inp" id="cp-valor" inputmode="decimal" value="'+esc(k.valor||'')+'" placeholder="50,00"></label><label class="campo">Limite de escolhas no grupo<input class="inp" id="cp-lim" type="number" min="1" max="10" value="'+esc(k.limite||3)+'"></label></div>'+
+  h+='<form id="ad-cp" class="pilha" style="gap:12px">'+
+    // 1. compra de escolha
+    '<div class="cartao pilha cp-tipo"><div class="cp-tit">🎯 Compra de escolha</div>'+
+      '<div class="muted" style="font-size:13.5px">O participante paga para <b>escolher quem ele mesmo vai tirar</b>. Ninguém, nem os administradores, sabe quem ele escolheu.</div>'+
+      marcador('cp-ativa', k.escolhaAtiva, 'Permitir a compra de escolha neste grupo')+
+      '<div class="pilha cp-campos" data-de="cp-ativa"'+(k.escolhaAtiva?'':' hidden')+'>'+
+        (k.escolhaAtiva? numeros(k.feitas, k.limite) : '')+
+        '<div class="grade2"><label class="campo">Valor (R$)<input class="inp" id="cp-valor" inputmode="decimal" value="'+esc(k.valor||'')+'" placeholder="50,00"></label><label class="campo">Vagas no grupo<input class="inp" id="cp-lim" type="number" min="1" max="10" value="'+esc(k.limite||3)+'"></label></div>'+
+        marcador('cp-optout', k.compraOptOut, 'Quem não quiser ser escolhido pode ficar de fora (opção no Perfil)')+
+      '</div></div>'+
+    // 2. abraço garantido
+    '<div class="cartao pilha cp-tipo"><div class="cp-tit">🤗 Abraço Garantido</div>'+
+      '<div class="muted" style="font-size:13.5px">O participante paga para <b>escolher quem vai tirar quem</b> entre duas outras pessoas (ele não pode fazer parte do par). Ninguém fica sabendo quem pagou nem qual foi o par.</div>'+
+      marcador('ab-ativa', k.abracoAtiva, 'Permitir o Abraço Garantido neste grupo')+
+      '<div class="pilha cp-campos" data-de="ab-ativa"'+(k.abracoAtiva?'':' hidden')+'>'+
+        (k.abracoAtiva? numeros(k.abracos, k.abracoLimite) : '')+
+        '<div class="grade2"><label class="campo">Valor (R$)<input class="inp" id="ab-valor" inputmode="decimal" value="'+esc(k.abracoValor||'')+'" placeholder="100,00"></label><label class="campo">Vagas no grupo<input class="inp" id="ab-lim" type="number" min="1" max="10" value="'+esc(k.abracoLimite||1)+'"></label></div>'+
+        marcador('ab-optout', k.abracoOptOut, 'Quem não quiser ser incluído em um par pode ficar de fora (opção no Perfil)')+
+      '</div></div>'+
+    // 3. PIX, comum às duas
+    '<div class="cartao pilha cp-tipo" id="cp-pix-box"'+(k.escolhaAtiva||k.abracoAtiva?'':' hidden')+'><div class="cp-tit">💳 Dados para o PIX</div>'+
+      '<div class="muted" style="font-size:13.5px">Valem para as duas compras. Só o administrador geral confere os pagamentos.</div>'+
       '<label class="campo">Chave PIX<input class="inp" id="cp-pix" value="'+esc(k.pix||'')+'"></label>'+
       '<label class="campo">Titular da conta<input class="inp" id="cp-tit" value="'+esc(k.titular||'')+'"></label>'+
       '<div class="grade2"><label class="campo">Banco<input class="inp" id="cp-banco" value="'+esc(k.banco||'')+'"></label><div class="grade2" style="gap:8px"><label class="campo">Agência<input class="inp" id="cp-ag" value="'+esc(k.agencia||'')+'"></label><label class="campo">Conta<input class="inp" id="cp-conta" value="'+esc(k.conta||'')+'"></label></div></div>'+
-      '<label style="display:flex;gap:10px;align-items:flex-start;font-weight:600;font-size:14px"><input type="checkbox" id="cp-optout" '+(k.compraOptOut?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> Permitir que participantes fiquem de fora da compra de escolha (opção no Perfil de cada um)</label>'+
-      '<div class="rotulo" style="margin-top:6px">🤗 Abraço Garantido</div>'+
-      '<label style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="ab-ativa" '+(k.abracoAtiva?'checked':'')+' style="width:20px;height:20px"> Permitir que participantes paguem para escolher quem vai tirar quem (um par de outras duas pessoas)</label>'+
-      '<div class="muted" style="font-size:13px">Quem paga escolhe o par e não pode fazer parte dele. Ninguém fica sabendo quem pagou nem qual foi o par. Usa os mesmos dados de PIX acima.</div>'+
-      '<div class="grade2"><label class="campo">Valor do Abraço Garantido (R$)<input class="inp" id="ab-valor" inputmode="decimal" value="'+esc(k.abracoValor||'')+'" placeholder="100,00"></label><label class="campo">Limite de abraços no grupo<input class="inp" id="ab-lim" type="number" min="1" max="10" value="'+esc(k.abracoLimite||1)+'"></label></div>'+
-      '<label style="display:flex;gap:10px;align-items:flex-start;font-weight:600;font-size:14px"><input type="checkbox" id="ab-optout" '+(k.abracoOptOut?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> Permitir que participantes fiquem de fora do Abraço Garantido (opção no Perfil de cada um)</label>'+
-      '<button class="btn sec">Salvar compras</button></form>')+
-  '</div>';
+    '</div>'+
+    '<button class="btn" id="cp-salvar">Salvar compras</button></form>';
+  return h+'</div>';
 }
 function ligarCompraAdmin(c){
   var f=$('#ad-cp'); if(f) f.onsubmit=function(ev){ ev.preventDefault();
     var d={compraAtiva:$('#cp-ativa').checked, compraValor:$('#cp-valor').value, compraLimite:$('#cp-lim').value, compraPix:$('#cp-pix').value, compraTitular:$('#cp-tit').value, compraBanco:$('#cp-banco').value, compraAgencia:$('#cp-ag').value, compraConta:$('#cp-conta').value,
       compraOptOut:$('#cp-optout').checked, abracoAtivo:$('#ab-ativa').checked, abracoValor:$('#ab-valor').value, abracoLimite:$('#ab-lim').value, abracoOptOut:$('#ab-optout').checked};
-    ocupado(f.querySelector('.btn'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; aviso('Compras salvas.'); desenharAdmin(c); }); }); };
+    ocupado($('#cp-salvar'), function(){ return chamar('salvarGrupo',{grupoId:S.gid, dados:d}).then(function(g2){ S.g=g2; aviso('Compras salvas.'); desenharAdmin(c); }); }); };
+  // mostra os campos só da compra que estiver ligada; o PIX aparece se qualquer uma estiver
+  if(f){ var px=$('#cp-pix-box'); ['cp-ativa','ab-ativa'].forEach(function(id){ var cb=$('#'+id); cb.addEventListener('change', function(){
+    var cx=$('[data-de="'+id+'"]',f); if(cx) cx.hidden=!cb.checked;
+    if(px) px.hidden=!($('#cp-ativa').checked || $('#ab-ativa').checked); }); }); }
 }
 /* pedidos de compra de um grupo (só o administrador geral): conferir PIX, liberar, recusar e registrar devoluções */
 function desenharPedidos(box, gid, sorteado){
@@ -3761,7 +3808,9 @@ var P0 = window.__PARAMS__ || {};
 app.innerHTML=carregando();
 conectarPortal(function(){
   carregarFotosGuardadas();
-  S.token=lsGet('flecha-token'); S.gid=lsGet('flecha-grupo'); S.aba=lsGet('flecha-aba')||'amigo'; S.subAdmin='';
+  // ao abrir o app, começa sempre na aba Amigo; tocar num aviso abre direto onde está a novidade
+  S.token=lsGet('flecha-token'); S.gid=lsGet('flecha-grupo'); S.aba='amigo'; S.subAdmin='';
+  if((P0.ir==='conversas' || P0.ir==='mural') && P0.g){ S.gid=P0.g; S.aba=P0.ir; if(P0.ir==='conversas' && P0.c) S.conv=P0.c; }
   if(P0.acao==='pedir') telaPedidoGrupo();
   else if(P0.acao && P0.t) telaLink({acao:P0.acao, t:P0.t});
   else if(S.token) iniciar();
