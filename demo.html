@@ -99,6 +99,10 @@ window.addEventListener('message', function (ev) {
   } else if (ev.data.flecha === 'base') {
     var capa = ev.data.modo === 'capa';
     document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
+  } else if (ev.data.flecha === 'foco') {
+    // o teclado está abrindo: informa ao app a faixa visível (em coordenadas do app), algumas vezes enquanto ele sobe
+    var fonte = ev.source, origem = ev.origin;
+    [120, 380, 700].forEach(function (ms) { setTimeout(function () { informarVisivel(fonte, origem); }, ms); });
   } else if (ev.data.flecha === 'teclado') {
     voltarDepois(450);
   } else if (/^push-/.test(ev.data.flecha)) {
@@ -117,6 +121,11 @@ window.addEventListener('message', function (ev) {
 /* iPhone: depois que o teclado FECHA, a página às vezes fica "deslocada" e o toque cai fora do botão.
    Recoloca no lugar só com o teclado fechado: enquanto ele está aberto, o iPhone precisa deslizar a tela
    para mostrar o campo que está sendo digitado. */
+function informarVisivel(fonte, origem) {
+  var v = window.visualViewport, r = frame.getBoundingClientRect();
+  var topoV = v ? v.offsetTop : 0, altV = v ? v.height : window.innerHeight;
+  try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top }, origem); } catch (e) {}
+}
 function tecladoAberto() { var v = window.visualViewport; return !!(v && v.height < window.innerHeight - 120); }
 function voltarAoTopo() {
   if (tecladoAberto()) return;
