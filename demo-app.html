@@ -248,7 +248,9 @@ main{padding-bottom:calc(90px + var(--sab))}
 .item.conv-tirou{background:color-mix(in srgb,var(--mata-2) 11%,var(--cartao));box-shadow:inset 4px 0 0 var(--mata-2)}
 .item.conv-tirou .av.anon{background:color-mix(in srgb,var(--mata-2) 22%,var(--cartao));color:var(--mata-2)}
 @media (prefers-color-scheme:dark){ .item.conv-tirou{background:color-mix(in srgb,#5fa877 12%,var(--cartao));box-shadow:inset 4px 0 0 #5fa877} .item.conv-tirou .av.anon{color:#8fd0a3} }
-.oferta-prot{margin-top:14px;padding:12px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);font-size:13.5px}
+.oferta-prot{margin-top:14px;padding:14px;border-radius:14px;background:#f3ead2;color:#1d2620;border:2px solid var(--palha);font-size:14px;line-height:1.45;text-align:left;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.oferta-prot .op-tit{font-weight:800;font-size:16px;color:#21402f;margin-bottom:4px}
+.oferta-prot .link{color:#55615a}
 .part.av-c1{border:2px solid var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--cartao))}
 .part.av-c2,.part.av-c3{border:1.5px solid color-mix(in srgb,var(--ok) 60%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--cartao))}
 .part.av-c4{border-style:dashed}
@@ -2263,16 +2265,23 @@ function lsSet(k,v){
 /* depois que o teclado fecha, pede à página de entrada para recolocar a tela no lugar (evita toque deslocado no iPhone) */
 var focoAtual=null;
 function ehCampo(el){ return el && (el.tagName==='TEXTAREA' || (el.tagName==='INPUT' && !/^(checkbox|radio|button|submit|file|range)$/i.test(el.type))); }
-document.addEventListener('focusin', function(ev){
+function avisarFoco(ev){
   if(!VIA_PORTAL || !ehCampo(ev.target)) return;
   focoAtual=ev.target;
   try{ window.top.postMessage({flecha:'foco'}, PORTAL); }catch(e){}
-});
+}
+document.addEventListener('focusin', avisarFoco);
+// o campo pode já estar em foco (ex.: janelas que focam sozinhas) e o teclado só abrir no toque
+document.addEventListener('touchend', avisarFoco, true);
+document.addEventListener('click', avisarFoco, true);
 /* a página de entrada informa qual faixa do app está visível acima do teclado; o campo em foco é rolado para dentro dela */
 window.addEventListener('message', function(ev){
   if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='visivel') return;
   var el=focoAtual; if(!el || document.activeElement!==el) return;
   var cobre=window.innerHeight-ev.data.ate;   // quanto do app o teclado cobre
+  // campo dentro de uma janela (ex.: pedido de senha): sobe a janela inteira para cima do teclado
+  var fm=el.closest('.modal-fundo');
+  if(fm){ fm.style.paddingBottom = cobre>100? (cobre+16)+'px' : ''; return; }
   // espaço extra no fim da página, para dar para rolar o último campo para cima do teclado
   var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom = cobre>100? (cobre+90)+'px' : '';
   var r=el.getBoundingClientRect(), topo=Math.max(ev.data.de,0)+80, base=ev.data.ate-16;   // 80 = cabeçalho fixo
@@ -2280,7 +2289,7 @@ window.addEventListener('message', function(ev){
   if(r.bottom > base) window.scrollBy(0, Math.min(r.bottom-base, r.top-topo));
   else if(r.top < topo) window.scrollBy(0, r.top-topo);
 });
-document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)){ var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom=''; } }, 300); });
+document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)){ var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom=''; $$('.modal-fundo').forEach(function(f){ f.style.paddingBottom=''; }); } }, 300); });
 document.addEventListener('focusout', function(){ if(VIA_PORTAL) setTimeout(function(){ try{ window.top.postMessage({flecha:'teclado'}, PORTAL); }catch(e){} }, 80); });
 function conectarPortal(pronto){
   if(!PORTAL || window.top===window.self) return pronto();
@@ -2884,10 +2893,10 @@ document.addEventListener('visibilitychange', function(){ if(document.hidden) es
 function revelarAmigo(a){
   var r=$('#bil-r'); if(!r) return;
   r.innerHTML='<div class="rotulo">Você tirou</div><div class="revelado" style="margin-top:10px">'+avatar(a.foto,a.nome,'g')+'<div><div class="nome-amigo">'+esc(a.nome)+'</div><button class="link" id="bil-esc" style="color:var(--palha)">Esconder</button></div></div>'+
+    (!S.eu.protegeAmigo && !lsGet('flecha-oferta-protecao')? '<div class="oferta-prot"><div class="op-tit">🔒 Proteja o seu amigo secreto</div><div>Se alguém pegar o seu celular, pode ver quem você tirou. Ative a proteção e o nome só aparece depois de digitar a sua senha do app.</div><div class="linha-acoes" style="margin-top:10px"><button class="btn" id="prot-sim">🔒 Proteger com a minha senha</button><button class="link" id="prot-nao" style="font-size:13.5px">Agora não</button></div></div>' : '')+
     '<div class="desejos">'+(a.desejos? '<div class="rotulo" style="margin-bottom:4px">Gostaria de ganhar</div>'+esc(a.desejos) : 'Ainda não colocou sugestões de presente. Que tal perguntar pela conversa, sem se identificar?')+'</div>'+
     '<div class="linha-acoes" style="margin-top:14px"><button class="btn" data-ir="amigo">'+I.balao+'Conversar com meu amigo</button><button class="btn mata" data-ir="tirou">'+I.presente+'Falar com quem me tirou</button></div>'+
-    '<div style="font-size:12px;opacity:.7;margin-top:10px">Some sozinho em 20 segundos.</div>'+
-    (!S.eu.protegeAmigo && !lsGet('flecha-oferta-protecao')? '<div class="oferta-prot"><div><b>🔒 Proteger com a sua senha?</b> Assim, se alguém pegar o seu celular, não consegue ver quem você tirou.</div><div class="linha-acoes" style="margin-top:8px"><button class="btn peq" id="prot-sim">Proteger</button><button class="link" id="prot-nao" style="color:var(--palha);font-size:13px">Agora não</button></div></div>' : '');
+    '<div style="font-size:12px;opacity:.7;margin-top:10px">Some sozinho em 20 segundos.</div>';
   $('#bil-c').hidden=true; r.hidden=false;
   $('#bil-esc').onclick=esconderAmigo;
   $$('[data-ir]', r).forEach(function(b){ b.onclick=function(){ esconderAmigo(); chamar('conversas',{grupoId:S.gid}).then(function(cs){ var alvo=cs.filter(function(k){ return k.tipo==='amigo' && (b.dataset.ir==='amigo'? k.ordem===0 : k.ordem===1); })[0]; if(alvo){ S.conv=alvo.id; mostrarAba('conversas'); } }).catch(falha); }; });

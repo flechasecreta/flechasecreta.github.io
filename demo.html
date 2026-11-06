@@ -94,6 +94,7 @@ function doGoogle(origem) { if (origem === location.origin) return true; try { r
 window.addEventListener('message', function (ev) {
   if (!doGoogle(ev.origin) || !ev.data || !ev.data.flecha) return;
   if (ev.data.flecha === 'pedir') {
+    appFonte = ev.source; appOrigem = ev.origin;
     ev.source.postMessage({ flecha: 'dados', dados: lerTudo(), margens: margens() }, ev.origin);
     esconderAbertura();
   } else if (ev.data.flecha === 'base') {
@@ -121,6 +122,9 @@ window.addEventListener('message', function (ev) {
 /* iPhone: depois que o teclado FECHA, a página às vezes fica "deslocada" e o toque cai fora do botão.
    Recoloca no lugar só com o teclado fechado: enquanto ele está aberto, o iPhone precisa deslizar a tela
    para mostrar o campo que está sendo digitado. */
+var appFonte = null, appOrigem = '';
+/* sempre que o teclado abre ou fecha, o app fica sabendo qual parte dele está visível */
+if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { if (appFonte) informarVisivel(appFonte, appOrigem); });
 function informarVisivel(fonte, origem) {
   var v = window.visualViewport, r = frame.getBoundingClientRect();
   var topoV = v ? v.offsetTop : 0, altV = v ? v.height : window.innerHeight;
