@@ -322,7 +322,7 @@ td.num{font-variant-numeric:tabular-nums;color:var(--tinta-2)}
 @media (max-height:700px){.capa.compacta .pedir-titulo{font-size:14.5px !important}}
 
 /* ---------- modais e avisos ---------- */
-.modal-fundo{position:fixed;inset:0;background:rgba(10,20,14,.55);z-index:50;display:grid;place-items:end center;padding:16px;padding-bottom:max(16px,var(--sab))}
+.modal-fundo{transition:padding-bottom .22s ease-out;position:fixed;inset:0;background:rgba(10,20,14,.55);z-index:50;display:grid;place-items:end center;padding:16px;padding-bottom:max(16px,var(--sab))}
 @media (min-width:640px){.modal-fundo{place-items:center}}
 .modal{background:var(--cartao);border-radius:18px;padding:20px;width:100%;max-width:520px;max-height:86vh;overflow:auto;display:grid;gap:14px}
 .modal h2{font-size:21px}
@@ -336,6 +336,7 @@ td.num{font-variant-numeric:tabular-nums;color:var(--tinta-2)}
 .giro{width:28px;height:28px;border:3px solid var(--linha);border-top-color:var(--brasa);border-radius:50%;animation:g 0.8s linear infinite}
 @keyframes g{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.giro{animation:none}}
+.btn .giro{display:inline-block;width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,.35);border-top-color:#fff;vertical-align:-3px}
 
 /* ---------- painel da demonstração ---------- */
 .sair-demo{position:fixed;left:max(10px,var(--sal));bottom:calc(74px + var(--sab));z-index:40;background:var(--mata-2);color:var(--sobre-mata);border:2px solid var(--palha);border-radius:999px;padding:7px 13px;font-size:13px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer}
@@ -2281,13 +2282,16 @@ window.addEventListener('message', function(ev){
   var cobre=window.innerHeight-ev.data.ate;   // quanto do app o teclado cobre
   // campo dentro de uma janela (ex.: pedido de senha): sobe a janela inteira para cima do teclado
   var fm=el.closest('.modal-fundo');
-  if(fm){ fm.style.paddingBottom = cobre>100? (cobre+16)+'px' : ''; return; }
+  if(fm){ var alvo=cobre>100? cobre+16 : 0, atual=parseInt(fm.style.paddingBottom,10)||0;
+    if(Math.abs(alvo-atual)>24) fm.style.paddingBottom = alvo? alvo+'px' : '';   // só mexe se mudou de verdade (evita "piscadas")
+    return; }
   // espaço extra no fim da página, para dar para rolar o último campo para cima do teclado
-  var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom = cobre>100? (cobre+90)+'px' : '';
+  var mn=document.querySelector('main');
+  if(mn){ var alvoP=cobre>100? cobre+90 : 0, atualP=parseInt(mn.style.paddingBottom,10)||0; if(Math.abs(alvoP-atualP)>40 && (alvoP>atualP || !alvoP)) mn.style.paddingBottom = alvoP? alvoP+'px' : ''; }
   var r=el.getBoundingClientRect(), topo=Math.max(ev.data.de,0)+80, base=ev.data.ate-16;   // 80 = cabeçalho fixo
   if(base-topo < 60) return;
-  if(r.bottom > base) window.scrollBy(0, Math.min(r.bottom-base, r.top-topo));
-  else if(r.top < topo) window.scrollBy(0, r.top-topo);
+  if(r.bottom > base) window.scrollBy({top:Math.min(r.bottom-base, r.top-topo), behavior:'smooth'});
+  else if(r.top < topo) window.scrollBy({top:r.top-topo, behavior:'smooth'});
 });
 document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)){ var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom=''; $$('.modal-fundo').forEach(function(f){ f.style.paddingBottom=''; }); } }, 300); });
 document.addEventListener('focusout', function(){ if(VIA_PORTAL) setTimeout(function(){ try{ window.top.postMessage({flecha:'teclado'}, PORTAL); }catch(e){} }, 80); });
@@ -2791,7 +2795,9 @@ function preCarregar(ch, nome, args){
   return chamar(nome, args).then(function(d){ CACHE[ch]={d:d, j:JSON.stringify(d)}; return d; }).catch(function(){ return null; });
 }
 function preCarregarAbas(){
-  var gid=S.gid, g=S.g; if(!gid || !g || g.suporte) return;
+  var gid=S.gid, g=S.g; if(!gid || !g) return;
+  if(g.souMestre) setTimeout(function(){ if(S.gid===gid) preCarregar('central:'+gid,'painelGeral',{}); }, 1500);
+  if(g.suporte) return;
   setTimeout(function(){
     if(S.gid!==gid) return;
     preCarregar('amigo:'+gid,'meuAmigo',{grupoId:gid})
@@ -2879,10 +2885,10 @@ function abaAmigo(c, fresco){
     $('#des-ok').onclick=function(){ var b=this; ocupado(b, function(){ return chamar('salvarDesejos',{grupoId:S.gid, desejos:$('#des').value}).then(function(){ S.g.meusDesejos=$('#des').value; aviso('Sugestões salvas.'); }); }); };
     var v=$('#bil-ver'); if(v) v.onclick=function(){
       if(!a.protegido) return revelarAmigo(a);
-      pedirSenhaAmigo('Para ver o seu amigo secreto, digite a senha que você usa para entrar no Flecha Secreta.').then(function(senha){
-        if(senha==null) return;
-        return chamar('revelarAmigo',{grupoId:S.gid, senha:senha}).then(function(r){ revelarAmigo(r); });
-      }).catch(falha);
+      // a janela fica aberta, com "Conferindo…", até o servidor responder; senha errada aparece na própria janela
+      pedirSenhaAmigo('Para ver o seu amigo secreto, digite a senha que você usa para entrar no Flecha Secreta.', function(senha){
+        return chamar('revelarAmigo',{grupoId:S.gid, senha:senha});
+      }).then(function(r){ if(r) revelarAmigo(r); });
     };
   }, function(){ var r=$('#bil-r'); return !(r && !r.hidden); });
 }
@@ -2904,11 +2910,18 @@ function revelarAmigo(a){
     $('#prot-nao').onclick=function(){ lsSet('flecha-oferta-protecao','1'); var o=$('.oferta-prot'); if(o) o.remove(); }; }
   clearTimeout(tEsconder); tEsconder=setTimeout(esconderAmigo, 20000);
 }
-function pedirSenhaAmigo(texto){
+/* Pede a senha numa janela. "acao" recebe a senha e devolve uma promessa: enquanto ela roda, o botão mostra
+   "Conferindo…"; se der erro (ex.: senha incorreta), a mensagem aparece na própria janela. Resolve com o resultado, ou null se cancelar. */
+function pedirSenhaAmigo(texto, acao){
   return new Promise(function(ok){
     var feito=false;
-    modal('<h2>🔒 Digite sua senha</h2><div class="muted" style="font-size:14px">'+esc(texto)+'</div><form id="sa-f" class="pilha" style="gap:10px"><input class="inp" type="password" id="sa-s" autocomplete="current-password" placeholder="Sua senha do Flecha Secreta"><button class="btn">Continuar</button></form><button class="link" data-fechar style="font-size:13px">Cancelar</button><div class="muted" style="font-size:12.5px">Esqueceu a senha? Saia da conta e use “Esqueci a senha” na tela de entrada.</div>', function(m, fechar){
-      $('#sa-f',m).onsubmit=function(ev){ ev.preventDefault(); var v=$('#sa-s',m).value; if(!v) return; feito=true; fechar(); ok(v); };
+    modal('<h2>🔒 Digite sua senha</h2><div class="muted" style="font-size:14px">'+esc(texto)+'</div><form id="sa-f" class="pilha" style="gap:10px"><input class="inp" type="password" id="sa-s" autocomplete="current-password" placeholder="Sua senha do Flecha Secreta"><div class="faixa erro" id="sa-e" hidden></div><button class="btn" id="sa-b">Continuar</button></form><button class="link" data-fechar style="font-size:13px">Cancelar</button><div class="muted" style="font-size:12.5px">Esqueceu a senha? Saia da conta e use “Esqueci a senha” na tela de entrada.</div>', function(m, fechar){
+      var f=$('#sa-f',m), inp=$('#sa-s',m), b=$('#sa-b',m), er=$('#sa-e',m);
+      f.onsubmit=function(ev){ ev.preventDefault(); var v=inp.value; if(!v || b.disabled) return;
+        er.hidden=true; b.disabled=true; inp.disabled=true; b.innerHTML='<span class="giro" aria-hidden="true"></span> Conferindo…';
+        Promise.resolve(acao? acao(v) : v).then(function(r){ feito=true; try{ document.activeElement && document.activeElement.blur(); }catch(e){} fechar(); ok(r); },
+          function(e){ b.disabled=false; inp.disabled=false; b.textContent='Continuar'; er.textContent=(e && e.message) || String(e); er.hidden=false; inp.value=''; try{ inp.focus(); }catch(x){} });
+      };
       new MutationObserver(function(_, o){ if(!document.body.contains(m)){ o.disconnect(); if(!feito) ok(null); } }).observe(document.body,{childList:true});
     });
   });
@@ -3334,21 +3347,25 @@ function telaPerfil(c){
     '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
     '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
     '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Com esta opção, o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Útil se outras pessoas costumam pegar o seu celular. Para desligar, também é preciso a senha.</div></div></div>'+
-    '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s"><div class="grade2"><label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label></div><button class="btn sec">Trocar senha</button></form></div>'+
+    '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s"><label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><div class="grade2"><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label><label class="campo">Repita a nova senha<input class="inp" type="password" id="pf-n2" autocomplete="new-password"></label></div><div class="faixa erro" id="pf-se" hidden></div><button class="btn sec">Trocar senha</button></form></div>'+
     '<div class="secao"><button class="btn sec larga" id="pf-sair">Sair desta conta</button><div class="muted" style="font-size:12.5px;text-align:center">Flecha Secreta · o amigo secreto da sua turma</div></div>';
   $('#pf-foto').onchange=function(){ var f=this.files[0]; lerImagem(f, 320, true).then(function(url){ foto=url; $('#pf-av').innerHTML=avatar(url,eu.nome,'g'); aviso('Foto pronta. Toque em Salvar perfil.'); }).catch(falha); };
   var sem=$('#pf-sem'); if(sem) sem.onclick=function(){ foto=''; $('#pf-av').innerHTML=avatar('',eu.nome,'g'); };
   var tel=$('#pf-tel'); if(tel) mascaraTelefone(tel);
   $('#pf-ok').onclick=function(){ var dados={nome:$('#pf-nome').value, foto:foto||''}; if(tel) dados.telefone=tel.value; ocupado(this, function(){ return chamar('salvarPerfil',dados).then(function(eu2){ S.eu=eu2; aviso('Perfil salvo.'); if(S.g) recarregarGrupo(); }); }); };
-  $('#pf-s').onsubmit=function(ev){ ev.preventDefault(); ocupado(this.querySelector('button'), function(){ return chamar('trocarSenha',{atual:$('#pf-a').value, nova:$('#pf-n').value}).then(function(t){ aviso(t); $('#pf-a').value=$('#pf-n').value=''; }); }); };
+  $('#pf-s').onsubmit=function(ev){ ev.preventDefault(); var er=$('#pf-se'); er.hidden=true;
+    if(!$('#pf-a').value){ er.textContent='Digite a sua senha atual.'; er.hidden=false; return; }
+    if($('#pf-n').value!==$('#pf-n2').value){ er.textContent='As duas novas senhas não são iguais. Digite de novo.'; er.hidden=false; $('#pf-n2').value=''; return; }
+    ocupado(this.querySelector('button'), function(){ return chamar('trocarSenha',{atual:$('#pf-a').value, nova:$('#pf-n').value}).then(function(t){ aviso(t); $('#pf-a').value=$('#pf-n').value=$('#pf-n2').value=''; }); }); };
   $('#pf-sair').onclick=function(){ sair(false); };
   desenharAvisos($('#pf-avisos'));
   var pp=$('#pf-prot'); if(pp) pp.onchange=function(){
     var quer=pp.checked; pp.disabled=true;
-    (quer? Promise.resolve('') : pedirSenhaAmigo('Para tirar a proteção do amigo secreto, digite a senha que você usa para entrar no Flecha Secreta.')).then(function(senha){
-      if(senha==null){ pp.checked=!quer; return; }
-      return chamar('protegerAmigo',{ativo:quer, senha:senha}).then(function(e2){ S.eu=e2; Object.keys(CACHE).forEach(function(k){ if(/^amigo:/.test(k)) delete CACHE[k]; });
-        aviso(quer? 'Pronto! O app vai pedir a sua senha para mostrar o amigo secreto.' : 'Proteção desligada.'); });
+    (quer? chamar('protegerAmigo',{ativo:true}) : pedirSenhaAmigo('Para tirar a proteção do amigo secreto, digite a senha que você usa para entrar no Flecha Secreta.', function(senha){
+      return chamar('protegerAmigo',{ativo:false, senha:senha}); })).then(function(e2){
+      if(!e2){ pp.checked=!quer; return; }
+      S.eu=e2; Object.keys(CACHE).forEach(function(k){ if(/^amigo:/.test(k)) delete CACHE[k]; });
+      aviso(quer? 'Pronto! O app vai pedir a sua senha para mostrar o amigo secreto.' : 'Proteção desligada.');
     }).catch(function(e){ pp.checked=!quer; falha(e); }).then(function(){ pp.disabled=false; });
   };
   desenharEmail($('#pf-email'));
@@ -3712,11 +3729,10 @@ function desenharSuporte(box, gid, d){
 /* ---------- aba: Central (só o administrador geral) ---------- */
 function abaCentral(c){
   S.subCentral='resumo';
-  var seq=seqAba;
-  Promise.all([chamar('painelGeral'), chamar('eu')]).then(function(r){
-    if(seq!==seqAba) return;
-    S.eu=r[1]; desenharCabecalho(); marcarCentral(); desenharCentral(c, r[0]);
-  }).catch(falha);
+  // abre na hora com o que já está guardado e atualiza em seguida (como as outras abas)
+  usarCache('central:'+S.gid, 'painelGeral', {}, function(pg){ desenharCentral(c, pg); },
+    function(){ return !document.activeElement || !/INPUT|TEXTAREA/.test(document.activeElement.tagName); });
+  atualizarPendencias();
 }
 function desenharCentral(c, pg){
   var pd=(S.eu && S.eu.pendencias) || {suporte:0,pedidosGrupo:0,compras:0,devolucoes:0,total:0}, g=S.g;
