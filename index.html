@@ -211,14 +211,26 @@ function perguntarPush(aoTocar) {
     d.querySelector('.nao').onclick = function () { fim(false); };
   });
 }
-/* espera a inscrição ficar pronta no OneSignal (na primeira vez o iPhone pode levar alguns segundos) */
-function esperarInscricao(ms) {
+/* espera a inscrição ficar pronta no OneSignal (na primeira vez o celular pode levar alguns segundos) */
+function esperarInscricao(OS, ms) {
   var ate = Date.now() + ms;
   return new Promise(function (ok) {
-    (function ver() {
-      estadoPush().then(function (e) { if (e.inscrito || e.permissao !== 'granted' || Date.now() > ate) ok(); else setTimeout(ver, 700); });
-    })();
+    (function ver() { if (inscritoAgora(OS) || Notification.permission !== 'granted' || Date.now() > ate) ok(); else setTimeout(ver, 400); })();
   });
+}
+/* roda um passo do OneSignal sem deixar a ativação presa: se demorar ou der erro, segue adiante */
+function semPrender(passo, ms) {
+  var p; try { p = Promise.resolve(passo()); } catch (e) { p = Promise.resolve(); }
+  return Promise.race([p, new Promise(function (ok) { setTimeout(ok, ms); })]).catch(function () {});
+}
+/* Inscreve o aparelho NA HORA. No OneSignal, optIn() só marca a opção "quero receber"; quem registra o aparelho de fato
+   é Notifications.requestPermission() (com a permissão já dada ele não pergunta nada, só registra). Antes, sem esse passo,
+   a inscrição só acontecia na próxima vez que o app era aberto, e a ativação parecia travada. */
+function inscreverAparelho(OS, id) {
+  return semPrender(function () { return OS.login(id); }, 6000)
+    .then(function () { return semPrender(function () { return OS.Notifications.requestPermission(); }, 25000); })
+    .then(function () { return semPrender(function () { return OS.User.PushSubscription.optIn(); }, 6000); })
+    .then(function () { return esperarInscricao(OS, 12000); });
 }
 function tratarPush(m, fonte, origem) {
   function responder(extra) { estadoPush().then(function (e) { for (var k in extra) e[k] = extra[k]; try { fonte.postMessage(e, origem); } catch (x) {} }); }
@@ -243,17 +255,13 @@ function tratarPush(m, fonte, origem) {
     }
     if (!pushSuportado()) return responder({});
     if (Notification.permission === 'denied') return responder({});
-    var OSp = carregarPush();
-    function inscrever(OS) {
-      return Promise.resolve(OS.login(id)).then(function () {
-        if (Notification.permission === 'granted') return OS.User.PushSubscription.optIn();
-        return OS.Notifications.requestPermission().then(function () { if (Notification.permission === 'granted') return OS.User.PushSubscription.optIn(); });
-      });
-    }
-    if (Notification.permission === 'granted') return OSp.then(inscrever).catch(function () {}).then(function () { return esperarInscricao(15000); }).then(function () { responder({}); });
+    var OSp = carregarPush();   // começa a carregar já, enquanto a pessoa lê a pergunta
+    OSp.catch(function () {});
+    function inscrever(OS) { return Notification.permission === 'granted' ? inscreverAparelho(OS, id) : null; }
+    if (Notification.permission === 'granted') return OSp.then(inscrever).catch(function () {}).then(function () { responder({}); });
     return perguntarPush(function () { return Notification.requestPermission(); }).then(function (pedido) {
       if (!pedido) return responder({ resposta: 'nao' });
-      return Promise.resolve(pedido).then(function () { return OSp; }).then(inscrever).catch(function () {}).then(function () { return esperarInscricao(20000); }).then(function () { responder({}); });
+      return Promise.resolve(pedido).catch(function () {}).then(function () { return OSp; }).then(inscrever).catch(function () {}).then(function () { responder({}); });
     });
   }
 }

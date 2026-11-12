@@ -324,6 +324,10 @@ td.num{font-variant-numeric:tabular-nums;color:var(--tinta-2)}
 /* ---------- modais e avisos ---------- */
 .modal-fundo{transition:padding-bottom .22s ease-out;position:fixed;inset:0;background:rgba(10,20,14,.55);z-index:50;display:grid;place-items:end center;padding:16px;padding-bottom:max(16px,var(--sab))}
 @media (min-width:640px){.modal-fundo{place-items:center}}
+/* janela com campo de digitar: nasce no alto da tela, onde o teclado do celular não cobre (não precisa "pular" quando ele abre) */
+@media (max-width:639.98px){.modal-fundo.com-campo{place-items:start center;padding-top:max(16px,11vh)}}
+/* senha conferida só por digitação: o campo não é do tipo "senha" para o celular não oferecer a senha salva (Face ID / digital) */
+.senha-oculta{-webkit-text-security:disc;text-security:disc}
 .modal{background:var(--cartao);border-radius:18px;padding:20px;width:100%;max-width:520px;max-height:86vh;overflow:auto;display:grid;gap:14px}
 .modal h2{font-size:21px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--sab));z-index:60;background:var(--tinta);color:var(--fundo);padding:11px 16px;border-radius:12px;font-weight:600;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.25)}
@@ -895,7 +899,7 @@ var Core = (function () {
       telefoneLiberado: telefoneLiberadoPara(u.email), avisos: /^tg:/.test(u.avisoTopico) ? 'ativo' : /^pend:/.test(u.avisoTopico) ? 'pendente' : '',
       avisoLink: /^pend:/.test(u.avisoTopico) && P.telegramBot && P.telegramBot() ? 'https://t.me/' + P.telegramBot() + '?start=' + u.avisoTopico.substr(5) : '',
       avisoDisponivel: !!(P.telegramBot && P.telegramBot()),
-      pushDisponivel: pushAtivo(), push: !!u.push, previa: u.semPrevia !== 'sim', protegeAmigo: u.protegeAmigo === 'sim', pushId: pushAtivo() ? Cripto.idPush(u.email) : '',
+      pushDisponivel: pushAtivo(), push: !!u.push, previa: u.semPrevia !== 'sim', protegeAmigo: querProtecao(u), pushId: pushAtivo() ? Cripto.idPush(u.email) : '',
       emailNovo: (u.emailNovo && new Date(u.tokenEmailExpira).getTime() > Date.now()) ? u.emailNovo : '' };
   };
 
@@ -1183,7 +1187,10 @@ var Core = (function () {
   }
   /* Proteção do amigo secreto: quem ativou no Perfil só vê o nome digitando a própria senha do app.
      Sem a senha, o servidor nem envia o nome ao celular. */
-  function protegido(u) { var x = usuario(u.email) || u; return x.protegeAmigo === 'sim'; }
+  /* A proteção vem LIGADA para todos: só fica desligada para quem desligou no Perfil (com a senha).
+     Vazio = nunca escolheu = protegido. (A demonstração, em que ninguém tem senha própria, começa desligada.) */
+  function querProtecao(x) { var v = x && x.protegeAmigo; return v === 'sim' || (v !== 'nao' && P.protecaoPadrao !== false); }
+  function protegido(u) { return querProtecao(usuario(u.email) || u); }
   function conferirSenha(u, senha) {
     var x = usuario(u.email);
     if (!x || Cripto.hashSenha(String(senha || ''), x.salt) !== x.senhaHash) {
@@ -1210,7 +1217,7 @@ var Core = (function () {
   api.protegerAmigo = function (a) {
     var u = sessao(a.token);
     if (!a.ativo) conferirSenha(u, a.senha);   // para desligar, é preciso a senha (quem pegar o celular não consegue tirar a proteção)
-    T('Usuarios').update(function (x) { return x.email === u.email; }, { protegeAmigo: a.ativo ? 'sim' : '' });
+    T('Usuarios').update(function (x) { return x.email === u.email; }, { protegeAmigo: a.ativo ? 'sim' : 'nao' });
     return api.eu({ token: a.token });
   };
 
@@ -2206,6 +2213,7 @@ var DEMO = (function () {
 })();
 
 var P = {
+  protecaoPadrao: false,   // na demonstração o amigo secreto abre sem senha, até a pessoa ligar a proteção no Perfil
   db: function (n) {
     return {
       all: function () { return DEMO.tab(n).map(function (o) { var c = {}; for (var k in o) c[k] = o[k]; return c; }); },
@@ -2282,6 +2290,11 @@ window.addEventListener('message', function(ev){
   var cobre=window.innerHeight-ev.data.ate;   // quanto do app o teclado cobre
   // campo dentro de uma janela (ex.: pedido de senha): sobe a janela inteira para cima do teclado
   var fm=el.closest('.modal-fundo');
+  if(fm && fm.classList.contains('com-campo') && getComputedStyle(fm).alignItems==='start'){
+    // janela já está no alto: fica parada. Só se o campo ainda ficar atrás do teclado é que a janela encolhe e rola por dentro
+    var md=fm.firstElementChild, rc=el.getBoundingClientRect();
+    if(md && cobre>100 && rc.bottom > ev.data.ate-10){ md.style.maxHeight=Math.max(180, Math.round(ev.data.ate-md.getBoundingClientRect().top-10))+'px'; try{ el.scrollIntoView({block:'center'}); }catch(e){} }
+    return; }
   if(fm){ var alvo=cobre>100? cobre+16 : 0, atual=parseInt(fm.style.paddingBottom,10)||0;
     if(Math.abs(alvo-atual)>24) fm.style.paddingBottom = alvo? alvo+'px' : '';   // só mexe se mudou de verdade (evita "piscadas")
     return; }
@@ -2293,7 +2306,7 @@ window.addEventListener('message', function(ev){
   if(r.bottom > base) window.scrollBy({top:Math.min(r.bottom-base, r.top-topo), behavior:'smooth'});
   else if(r.top < topo) window.scrollBy({top:r.top-topo, behavior:'smooth'});
 });
-document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)){ var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom=''; $$('.modal-fundo').forEach(function(f){ f.style.paddingBottom=''; }); } }, 300); });
+document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)){ var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom=''; $$('.modal-fundo').forEach(function(f){ f.style.paddingBottom=''; if(f.firstElementChild) f.firstElementChild.style.maxHeight=''; }); } }, 300); });
 document.addEventListener('focusout', function(){ if(VIA_PORTAL) setTimeout(function(){ try{ window.top.postMessage({flecha:'teclado'}, PORTAL); }catch(e){} }, 80); });
 function conectarPortal(pronto){
   if(!PORTAL || window.top===window.self) return pronto();
@@ -2324,7 +2337,18 @@ function estadoPush(msg){
   });
 }
 /* ao abrir o app, liga este celular à pessoa (se ela já ativou) */
-function ligarPush(eu){ if(eu && eu.push && eu.pushId && pushLigado!==eu.pushId && falarPortal({flecha:'push-id', id:eu.pushId})) pushLigado=eu.pushId; }
+function ligarPush(eu){ if(eu && eu.push && eu.pushId && pushLigado!==eu.pushId && falarPortal({flecha:'push-id', id:eu.pushId})) pushLigado=eu.pushId; concluirPushPendente(eu); }
+/* A pessoa pediu para ativar as notificações neste aparelho e a ativação não chegou a ser confirmada (fechou o app, internet lenta…):
+   na próxima abertura, se o aparelho já estiver inscrito, o app conclui sozinho, sem ela precisar tocar em nada. */
+var pushConcluindo=false;
+function concluirPushPendente(eu){
+  if(pushConcluindo || !VIA_PORTAL || !eu || !eu.pushDisponivel || eu.push || !lsGet('flecha-push-quer')) return;
+  pushConcluindo=true;
+  estadoPush().then(function(st){
+    if(!st || !st.inscrito){ if(st && st.permissao==='denied') lsSet('flecha-push-quer', null); return; }
+    return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; lsSet('flecha-push-quer', null); pushLigado=''; ligarPush(e2); aviso('Pronto! As notificações estão ativadas neste aparelho.'); var bx=$('#pf-avisos'); if(bx) desenharAvisos(bx); });
+  }).catch(function(){}).then(function(){ pushConcluindo=false; });
+}
 
 /* ---------- ícones ---------- */
 var I = {
@@ -2420,6 +2444,7 @@ function modal(html, aoMontar){
   function fechar(){ f.remove(); }
   f.addEventListener('click', function(ev){ if(ev.target===f || ev.target.closest('[data-fechar]')) fechar(); });
   if(aoMontar) aoMontar(f.firstChild, fechar);
+  if(f.querySelector('textarea,input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden])')) f.classList.add('com-campo');
   var i=f.querySelector('input,textarea,select'); if(i) setTimeout(function(){ try{i.focus();}catch(e){} },50);
   return fechar;
 }
@@ -2495,11 +2520,13 @@ function fio(box, cfg){
 }
 /* Olho para mostrar/ocultar a senha (todos os campos de senha) */
 function olhosSenha(raiz){
-  $$('input[type="password"]:not([data-olho])', raiz||document).forEach(function(inp){
+  $$('input[type="password"]:not([data-olho]),input[data-senha]:not([data-olho])', raiz||document).forEach(function(inp){
     inp.setAttribute('data-olho','1');
     var w=document.createElement('span'); w.className='senha-wrap'; inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
     var b=document.createElement('button'); b.type='button'; b.className='olho'; b.setAttribute('aria-label','Mostrar senha'); b.innerHTML=I.olho; w.appendChild(b);
-    b.onclick=function(){ var ver=inp.type==='password'; inp.type=ver?'text':'password'; b.innerHTML=ver?I.olhoFechado:I.olho; b.setAttribute('aria-label', ver?'Ocultar senha':'Mostrar senha'); inp.focus(); };
+    b.onclick=function(){ var disf=inp.hasAttribute('data-senha'), ver=disf? inp.classList.contains('senha-oculta') : inp.type==='password';
+      if(disf) inp.classList.toggle('senha-oculta', !ver); else inp.type=ver?'text':'password';
+      b.innerHTML=ver?I.olhoFechado:I.olho; b.setAttribute('aria-label', ver?'Ocultar senha':'Mostrar senha'); inp.focus(); };
   });
 }
 try{ new MutationObserver(function(){ olhosSenha(); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
@@ -2899,15 +2926,12 @@ document.addEventListener('visibilitychange', function(){ if(document.hidden) es
 function revelarAmigo(a){
   var r=$('#bil-r'); if(!r) return;
   r.innerHTML='<div class="rotulo">Você tirou</div><div class="revelado" style="margin-top:10px">'+avatar(a.foto,a.nome,'g')+'<div><div class="nome-amigo">'+esc(a.nome)+'</div><button class="link" id="bil-esc" style="color:var(--palha)">Esconder</button></div></div>'+
-    (!S.eu.protegeAmigo && !lsGet('flecha-oferta-protecao')? '<div class="oferta-prot"><div class="op-tit">🔒 Proteja o seu amigo secreto</div><div>Se alguém pegar o seu celular, pode ver quem você tirou. Ative a proteção e o nome só aparece depois de digitar a sua senha do app.</div><div class="linha-acoes" style="margin-top:10px"><button class="btn" id="prot-sim">🔒 Proteger com a minha senha</button><button class="link" id="prot-nao" style="font-size:13.5px">Agora não</button></div></div>' : '')+
     '<div class="desejos">'+(a.desejos? '<div class="rotulo" style="margin-bottom:4px">Gostaria de ganhar</div>'+esc(a.desejos) : 'Ainda não colocou sugestões de presente. Que tal perguntar pela conversa, sem se identificar?')+'</div>'+
     '<div class="linha-acoes" style="margin-top:14px"><button class="btn" data-ir="amigo">'+I.balao+'Conversar com meu amigo</button><button class="btn mata" data-ir="tirou">'+I.presente+'Falar com quem me tirou</button></div>'+
     '<div style="font-size:12px;opacity:.7;margin-top:10px">Some sozinho em 20 segundos.</div>';
   $('#bil-c').hidden=true; r.hidden=false;
   $('#bil-esc').onclick=esconderAmigo;
   $$('[data-ir]', r).forEach(function(b){ b.onclick=function(){ esconderAmigo(); chamar('conversas',{grupoId:S.gid}).then(function(cs){ var alvo=cs.filter(function(k){ return k.tipo==='amigo' && (b.dataset.ir==='amigo'? k.ordem===0 : k.ordem===1); })[0]; if(alvo){ S.conv=alvo.id; mostrarAba('conversas'); } }).catch(falha); }; });
-  var ps=$('#prot-sim'); if(ps){ ps.onclick=function(){ ocupado(ps, function(){ return chamar('protegerAmigo',{ativo:true}).then(function(e2){ S.eu=e2; lsSet('flecha-oferta-protecao','1'); delete CACHE['amigo:'+S.gid]; esconderAmigo(); aviso('Pronto! A partir de agora, o app pede a sua senha para mostrar o amigo secreto.'); mostrarAba('amigo'); }); }); };
-    $('#prot-nao').onclick=function(){ lsSet('flecha-oferta-protecao','1'); var o=$('.oferta-prot'); if(o) o.remove(); }; }
   clearTimeout(tEsconder); tEsconder=setTimeout(esconderAmigo, 20000);
 }
 /* Pede a senha numa janela. "acao" recebe a senha e devolve uma promessa: enquanto ela roda, o botão mostra
@@ -2915,7 +2939,7 @@ function revelarAmigo(a){
 function pedirSenhaAmigo(texto, acao){
   return new Promise(function(ok){
     var feito=false;
-    modal('<h2>🔒 Digite sua senha</h2><div class="muted" style="font-size:14px">'+esc(texto)+'</div><form id="sa-f" class="pilha" style="gap:10px"><input class="inp" type="password" id="sa-s" autocomplete="current-password" placeholder="Sua senha do Flecha Secreta"><div class="faixa erro" id="sa-e" hidden></div><button class="btn" id="sa-b">Continuar</button></form><button class="link" data-fechar style="font-size:13px">Cancelar</button><div class="muted" style="font-size:12.5px">Esqueceu a senha? Saia da conta e use “Esqueci a senha” na tela de entrada.</div>', function(m, fechar){
+    modal('<h2>🔒 Digite sua senha</h2><div class="muted" style="font-size:14px">'+esc(texto)+'</div><form id="sa-f" class="pilha" style="gap:10px" autocomplete="off"><input class="inp senha-oculta" type="text" data-senha id="sa-s" name="conf-'+Date.now().toString(36)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="Sua senha do Flecha Secreta"><div class="faixa erro" id="sa-e" hidden></div><button class="btn" id="sa-b">Continuar</button></form><button class="link" data-fechar style="font-size:13px">Cancelar</button><div class="muted" style="font-size:12.5px">Esqueceu a senha? Saia da conta e use “Esqueci a senha” na tela de entrada.</div>', function(m, fechar){
       var f=$('#sa-f',m), inp=$('#sa-s',m), b=$('#sa-b',m), er=$('#sa-e',m);
       f.onsubmit=function(ev){ ev.preventDefault(); var v=inp.value; if(!v || b.disabled) return;
         er.hidden=true; b.disabled=true; inp.disabled=true; b.innerHTML='<span class="giro" aria-hidden="true"></span> Conferindo…';
@@ -3056,6 +3080,18 @@ function novaMensagem(){
     abrirNovaMensagem(lst.concat(atalhos));
   }).catch(function(){ abrirNovaMensagem(atalhos); });
 }
+/* mensagem direto para uma pessoa (aba Grupo → tocar em alguém → Enviar mensagem): só escolhe se vai com o nome ou anônima */
+function mensagemPara(p){
+  modal('<div class="revelado">'+avatar(p.foto,p.nome,'g')+'<div><div class="rotulo">Mensagem para</div><h2 id="mp-nome">'+esc(p.nome)+'</h2></div></div>'+
+    (p.confirmou? '' : '<div class="faixa info">'+esc(p.nome)+' ainda não confirmou a participação e só vai conseguir ler a mensagem depois de confirmar.</div>')+
+    '<div class="campo" style="font-size:13px;font-weight:600;color:var(--tinta-2)">Como você quer aparecer?<div class="alternar" role="group"><button type="button" aria-pressed="true" data-an="0">Com meu nome</button><button type="button" aria-pressed="false" data-an="1">Anônimo</button></div></div>'+
+    '<div class="muted" style="font-size:13px" id="mp-exp">'+esc(p.nome)+' verá seu nome.</div>'+
+    '<div class="linha-acoes" style="justify-content:flex-end"><button class="btn sec" data-fechar>Cancelar</button><button class="btn" id="mp-ok">'+I.balao+'Escrever mensagem</button></div>', function(m, fechar){
+    var anon=false;
+    $$('[data-an]',m).forEach(function(b){ b.onclick=function(){ anon=b.dataset.an==='1'; $$('[data-an]',m).forEach(function(x){ x.setAttribute('aria-pressed', x===b); }); $('#mp-exp',m).textContent= anon? p.nome+' verá “Remetente anônimo”. Ninguém, nem o administrador, saberá que foi você.' : p.nome+' verá seu nome.'; }; });
+    $('#mp-ok',m).onclick=function(){ ocupado(this, function(){ return chamar('novaConversa',{grupoId:S.gid, para:p.email||p.id, anonimo:anon}).then(function(r){ fechar(); S.conv=r.id; mostrarAba('conversas'); }); }); };
+  });
+}
 function abrirNovaMensagem(atalhos){
   var ps=S.g.participantes.filter(function(p){ return !p.eu; });
   modal('<h2>Nova mensagem</h2><div class="lista">'+atalhos.map(function(a,i){ return '<button class="item" data-at="'+i+'">'+avatarIcone(a.ic)+'<div class="txt"><div class="t1">'+esc(a.t)+'</div><div class="t2">'+esc(a.s)+'</div></div></button>'; }).join('')+'</div><div class="rotulo" style="margin-top:4px">Ou escreva para uma pessoa</div><label class="campo">Para<select class="inp" id="nm-para">'+ps.map(function(p){ return '<option value="'+esc(p.email||p.id)+'">'+esc(p.nome)+'</option>'; }).join('')+'</select></label>'+
@@ -3173,7 +3209,7 @@ function abaParticipantes(c){
     $$('[data-i]',c).forEach(function(b){ b.onclick=function(){ var p=g.participantes[+b.dataset.i];
       modal('<div class="revelado">'+(p.foto?'<button type="button" class="av-zoom" id="pm-foto" aria-label="Ver foto maior">'+avatar(p.foto,p.nome,'g')+'</button>':avatar(p.foto,p.nome,'g'))+'<div><h2>'+esc(p.nome)+'</h2><div class="badges" style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">'+(p.auditor?'<span class="chip ouro">auditor</span>':'')+(p.admin?'<span class="chip">admin</span>':'')+(!p.confirmou&&!p.eu?'<span class="chip aviso">ainda não confirmou</span>':'')+'</div>'+(p.foto?'<div class="muted" style="font-size:12px;margin-top:4px">Toque na foto para ampliar</div>':'')+'</div></div><div><div class="rotulo">Gostaria de ganhar</div><div style="white-space:pre-wrap;margin-top:4px">'+(p.desejos?esc(p.desejos):'<span class="muted">Ainda não colocou sugestões.</span>')+'</div></div>'+(p.eu?'':'<button class="btn sec" id="pm-msg">'+I.balao+'Enviar mensagem</button>')+'<button class="btn sec" data-fechar>Fechar</button>', function(m,fechar){
         var pf=$('#pm-foto',m); if(pf) pf.onclick=function(){ verFoto(p.foto, p.nome); };
-        var bm=$('#pm-msg',m); if(bm) bm.onclick=function(){ fechar(); novaMensagem(); setTimeout(function(){ var s=$('#nm-para'); if(s) s.value=p.email||p.id; },60); };
+        var bm=$('#pm-msg',m); if(bm) bm.onclick=function(){ fechar(); mensagemPara(p); };
       });
     }; });
   }
@@ -3346,7 +3382,7 @@ function telaPerfil(c){
         '<div class="muted" style="font-size:12.5px">Só você vê '+(opE&&opA?'estas opções':'esta opção')+'. Ninguém fica sabendo quem marcou, e vale para os próximos pedidos.</div></div></div>'; })()+
     '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
     '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
-    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Com esta opção, o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Útil se outras pessoas costumam pegar o seu celular. Para desligar, também é preciso a senha.</div></div></div>'+
+    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou só aparece depois de <b>digitar</b> a senha que você usa para entrar no app (o Face ID e a digital não valem aqui). Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
     '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s"><label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><div class="grade2"><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label><label class="campo">Repita a nova senha<input class="inp" type="password" id="pf-n2" autocomplete="new-password"></label></div><div class="faixa erro" id="pf-se" hidden></div><button class="btn sec">Trocar senha</button></form></div>'+
     '<div class="secao"><button class="btn sec larga" id="pf-sair">Sair desta conta</button><div class="muted" style="font-size:12.5px;text-align:center">Flecha Secreta · o amigo secreto da sua turma</div></div>';
   $('#pf-foto').onchange=function(){ var f=this.files[0]; lerImagem(f, 320, true).then(function(url){ foto=url; $('#pf-av').innerHTML=avatar(url,eu.nome,'g'); aviso('Foto pronta. Toque em Salvar perfil.'); }).catch(falha); };
@@ -3457,7 +3493,7 @@ function desenharPush(box, tgBox){
         '<div class="linha-acoes"><button class="btn sec peq" id="ps-teste">Enviar teste</button><button class="link" id="ps-off" style="font-size:13px">Desativar</button></div>';
       $('#ps-teste',box).onclick=function(){ ocupado(this, function(){ return chamar('testarAviso',{canal:'push'}).then(function(t){ aviso(t); }); }); };
       $('#ps-off',box).onclick=function(){ confirmar('Desativar as notificações?','Você deixa de receber os avisos do Flecha Secreta como notificação (em todos os seus aparelhos).','Desativar').then(function(ok){ if(!ok) return;
-        estadoPush({flecha:'push-desativar'}); chamar('registrarPush',{ativo:false}).then(function(e2){ S.eu=e2; desenharAvisos(box.parentNode); }).catch(falha); }); };
+        lsSet('flecha-push-quer', null); estadoPush({flecha:'push-desativar'}); chamar('registrarPush',{ativo:false}).then(function(e2){ S.eu=e2; desenharAvisos(box.parentNode); }).catch(falha); }); };
       if(eu.avisos) telegram('Pelo Telegram'); else { tgBox.hidden=true; }
       return;
     }
@@ -3479,20 +3515,28 @@ function desenharPush(box, tgBox){
     }
     box.innerHTML='<div>Receba os avisos como <b>notificação do próprio aplicativo</b>, '+papeisAviso()+'.</div><div class="muted" style="font-size:13px">É gratuito, não precisa instalar nada e os avisos nunca mostram o nome do seu amigo secreto.</div>'+
       (eu.push?'<div class="muted" style="font-size:13px">Já está ativo em outro aparelho. Ative também neste, se quiser.</div>':'')+
-      '<button class="btn" id="ps-on">'+I_SINO+'Ativar notificações</button>';
-    $('#ps-on',box).onclick=function(){ var b=this; ocupado(b, function(){
-      return estadoPush({flecha:'push-ativar', id:eu.pushId}).then(function(st2){
-        if(st2 && st2.inscrito) return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; pushLigado=e2.pushId; aviso('Pronto! As notificações estão ativadas.'); desenharAvisos(box.parentNode); });
-        if(st2 && st2.permissao==='denied'){ aviso('As notificações foram bloqueadas. Veja como liberar logo abaixo.', true); desenharAvisos(box.parentNode); return; }
-        if(st2 && st2.resposta==='nao') return;
-        // permissão dada, mas a inscrição ainda está terminando: confere mais uma vez antes de desistir
-        if(st2 && st2.permissao==='granted') return new Promise(function(r){ setTimeout(r, 2500); }).then(function(){ return estadoPush(); }).then(function(st3){
-          if(st3 && st3.inscrito) return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; pushLigado=e2.pushId; aviso('Pronto! As notificações estão ativadas.'); desenharAvisos(box.parentNode); });
-          aviso('Quase lá! Toque em Ativar notificações mais uma vez para concluir.', true);
+      '<button class="btn" id="ps-on">'+I_SINO+'Ativar notificações</button><div class="muted" id="ps-st" style="font-size:13px" hidden></div>';
+    $('#ps-on',box).onclick=function(){ var b=this, stx=$('#ps-st',box);
+      function dizer(t){ if(stx){ stx.textContent=t; stx.hidden=!t; } }
+      function ativou(){ return chamar('registrarPush',{ativo:true}).then(function(e2){ S.eu=e2; pushLigado=e2.pushId; lsSet('flecha-push-quer', null); aviso('Pronto! As notificações estão ativadas.'); var bx=$('#pf-avisos'); if(bx) desenharAvisos(bx); }); }
+      // permissão dada, mas o celular ainda está terminando a inscrição: confere sozinho mais algumas vezes
+      function conferir(n){ return new Promise(function(r){ setTimeout(r, 3000); }).then(function(){ return estadoPush(); }).then(function(st3){
+        if(st3 && st3.inscrito) return ativou();
+        if(n>1 && st3 && st3.permissao==='granted') return conferir(n-1);
+        dizer('A ativação está terminando neste aparelho e se conclui sozinha. Se em um minuto ainda não aparecer como ativada, feche o Flecha Secreta e abra de novo: não é preciso repetir nada.');
+      }); }
+      ocupado(b, function(){
+        dizer('Ativando… responda “Permitir” às perguntas do celular e aguarde alguns segundos, sem fechar o aplicativo.');
+        lsSet('flecha-push-quer','1');
+        return estadoPush({flecha:'push-ativar', id:eu.pushId}).then(function(st2){
+          if(st2 && st2.inscrito) return ativou();
+          if(st2 && st2.permissao==='denied'){ lsSet('flecha-push-quer', null); aviso('As notificações foram bloqueadas. Veja como liberar logo abaixo.', true); desenharAvisos(box.parentNode); return; }
+          if(st2 && st2.resposta==='nao'){ lsSet('flecha-push-quer', null); dizer(''); return; }
+          if(st2 && st2.permissao==='granted'){ dizer('Quase pronto… concluindo a ativação neste aparelho.'); return conferir(4); }
+          lsSet('flecha-push-quer', null); dizer('');
+          aviso('Não foi possível ativar agora. Tente de novo em instantes.', true);
         });
-        aviso('Não foi possível ativar agora. Tente de novo em instantes.', true);
-      });
-    }); };
+      }); };
     telegram(eu.avisos?'Pelo Telegram':'Ou pelo Telegram');
   }
 }
