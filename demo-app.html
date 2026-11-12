@@ -326,8 +326,8 @@ td.num{font-variant-numeric:tabular-nums;color:var(--tinta-2)}
 @media (min-width:640px){.modal-fundo{place-items:center}}
 /* janela com campo de digitar: nasce no alto da tela, onde o teclado do celular não cobre (não precisa "pular" quando ele abre) */
 @media (max-width:639.98px){.modal-fundo.com-campo{place-items:start center;padding-top:max(16px,11vh)}}
-/* senha conferida só por digitação: o campo não é do tipo "senha" para o celular não oferecer a senha salva (Face ID / digital) */
-.senha-oculta{-webkit-text-security:disc;text-security:disc}
+/* O campo de senha é SEMPRE type="password". Em 12/11/2026 tentou-se um campo de texto com os caracteres ocultos, para o celular
+   não oferecer a senha salva; o iPhone passou a MOSTRAR a senha salva, legível, na barra do teclado. Não repetir. */
 .modal{background:var(--cartao);border-radius:18px;padding:20px;width:100%;max-width:520px;max-height:86vh;overflow:auto;display:grid;gap:14px}
 .modal h2{font-size:21px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--sab));z-index:60;background:var(--tinta);color:var(--fundo);padding:11px 16px;border-radius:12px;font-weight:600;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.25)}
@@ -2520,13 +2520,11 @@ function fio(box, cfg){
 }
 /* Olho para mostrar/ocultar a senha (todos os campos de senha) */
 function olhosSenha(raiz){
-  $$('input[type="password"]:not([data-olho]),input[data-senha]:not([data-olho])', raiz||document).forEach(function(inp){
+  $$('input[type="password"]:not([data-olho])', raiz||document).forEach(function(inp){
     inp.setAttribute('data-olho','1');
     var w=document.createElement('span'); w.className='senha-wrap'; inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
     var b=document.createElement('button'); b.type='button'; b.className='olho'; b.setAttribute('aria-label','Mostrar senha'); b.innerHTML=I.olho; w.appendChild(b);
-    b.onclick=function(){ var disf=inp.hasAttribute('data-senha'), ver=disf? inp.classList.contains('senha-oculta') : inp.type==='password';
-      if(disf) inp.classList.toggle('senha-oculta', !ver); else inp.type=ver?'text':'password';
-      b.innerHTML=ver?I.olhoFechado:I.olho; b.setAttribute('aria-label', ver?'Ocultar senha':'Mostrar senha'); inp.focus(); };
+    b.onclick=function(){ var ver=inp.type==='password'; inp.type=ver?'text':'password'; b.innerHTML=ver?I.olhoFechado:I.olho; b.setAttribute('aria-label', ver?'Ocultar senha':'Mostrar senha'); inp.focus(); };
   });
 }
 try{ new MutationObserver(function(){ olhosSenha(); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
@@ -2939,7 +2937,7 @@ function revelarAmigo(a){
 function pedirSenhaAmigo(texto, acao){
   return new Promise(function(ok){
     var feito=false;
-    modal('<h2>🔒 Digite sua senha</h2><div class="muted" style="font-size:14px">'+esc(texto)+'</div><form id="sa-f" class="pilha" style="gap:10px" autocomplete="off"><input class="inp senha-oculta" type="text" data-senha id="sa-s" name="conf-'+Date.now().toString(36)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="Sua senha do Flecha Secreta"><div class="faixa erro" id="sa-e" hidden></div><button class="btn" id="sa-b">Continuar</button></form><button class="link" data-fechar style="font-size:13px">Cancelar</button><div class="muted" style="font-size:12.5px">Esqueceu a senha? Saia da conta e use “Esqueci a senha” na tela de entrada.</div>', function(m, fechar){
+    modal('<h2>🔒 Digite sua senha</h2><div class="muted" style="font-size:14px">'+esc(texto)+'</div><form id="sa-f" class="pilha" style="gap:10px" autocomplete="off"><input class="inp" type="password" id="sa-s" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Sua senha do Flecha Secreta"><div class="faixa erro" id="sa-e" hidden></div><button class="btn" id="sa-b">Continuar</button></form><button class="link" data-fechar style="font-size:13px">Cancelar</button><div class="muted" style="font-size:12.5px">Esqueceu a senha? Saia da conta e use “Esqueci a senha” na tela de entrada.</div>', function(m, fechar){
       var f=$('#sa-f',m), inp=$('#sa-s',m), b=$('#sa-b',m), er=$('#sa-e',m);
       f.onsubmit=function(ev){ ev.preventDefault(); var v=inp.value; if(!v || b.disabled) return;
         er.hidden=true; b.disabled=true; inp.disabled=true; b.innerHTML='<span class="giro" aria-hidden="true"></span> Conferindo…';
@@ -3382,7 +3380,7 @@ function telaPerfil(c){
         '<div class="muted" style="font-size:12.5px">Só você vê '+(opE&&opA?'estas opções':'esta opção')+'. Ninguém fica sabendo quem marcou, e vale para os próximos pedidos.</div></div></div>'; })()+
     '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
     '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
-    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou só aparece depois de <b>digitar</b> a senha que você usa para entrar no app (o Face ID e a digital não valem aqui). Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
+    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou só aparece depois da senha que você usa para entrar no app. Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
     '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s"><label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><div class="grade2"><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label><label class="campo">Repita a nova senha<input class="inp" type="password" id="pf-n2" autocomplete="new-password"></label></div><div class="faixa erro" id="pf-se" hidden></div><button class="btn sec">Trocar senha</button></form></div>'+
     '<div class="secao"><button class="btn sec larga" id="pf-sair">Sair desta conta</button><div class="muted" style="font-size:12.5px;text-align:center">Flecha Secreta · o amigo secreto da sua turma</div></div>';
   $('#pf-foto').onchange=function(){ var f=this.files[0]; lerImagem(f, 320, true).then(function(url){ foto=url; $('#pf-av').innerHTML=avatar(url,eu.nome,'g'); aviso('Foto pronta. Toque em Salvar perfil.'); }).catch(falha); };
