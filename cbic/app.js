@@ -37,10 +37,14 @@
     fluxo: { titulo: 'Fluxo de caixa', cor: 'var(--flx)', subs: [['resumo', 'Resumo'], ['saldo', 'Saldo mês a mês'], ['mes', 'Mês'], ['tabela', 'Tabela']] },
     desp: { titulo: 'Despesas', cor: 'var(--cbic)', subs: [['resumo', 'Resumo'], ['mensal', 'Mês a mês'], ['dep', 'Departamentos'], ['cc', 'Centros'], ['conta', 'Contas'], ['cred', 'Credores'], ['tabela', 'Tabela']] },
     rec: { titulo: 'Receitas', cor: 'var(--rec)', subs: [['resumo', 'Resumo'], ['mensal', 'Mês a mês'], ['conta', 'Contas'], ['cli', 'Clientes'], ['tabela', 'Tabela']] },
-    orc: { titulo: 'Orçado × realizado', cor: 'var(--orc)', subs: [['resumo', 'Resumo'], ['rec', 'Receitas'], ['desp', 'Despesas'], ['tabela', 'Tabela']] },
+    orc: { titulo: 'Orçamento', cor: 'var(--orc)', subs: [['resumo', 'Resumo'], ['rec', 'Receitas'], ['desp', 'Despesas'], ['tabela', 'Tabela']] },
+    ajuda: { titulo: 'Ajuda', cor: 'var(--aju)', subs: [['uso', 'Como usar'], ['abas', 'As abas'], ['faq', 'Perguntas frequentes'], ['fale', 'Fale com o administrador']] },
+    admin: { titulo: 'Administrador', cor: 'var(--adm)', subs: [['resumo', 'Resumo'], ['msgs', 'Mensagens'], ['uso', 'Acessos'], ['erros', 'Erros']] },
   };
-  const S = Object.assign({ area: 'fluxo', sub: { fluxo: 'resumo', desp: 'resumo', rec: 'resumo', orc: 'resumo' },
+  const S = Object.assign({ area: 'fluxo', sub: { fluxo: 'resumo', desp: 'resumo', rec: 'resumo', orc: 'resumo', ajuda: 'uso', admin: 'resumo' },
     f: { grupo: 'Todos', de: null, ate: null, cc: null, conta: null, dep: null }, fx: { ano: null, corte: null, mes: null }, piv: 'dg', giroOk: false }, guarda.get('estado') || {});
+  S.sub = Object.assign({ fluxo: 'resumo', desp: 'resumo', rec: 'resumo', orc: 'resumo', ajuda: 'uso', admin: 'resumo' }, S.sub);
+  if (!AREAS[S.area]) S.area = 'fluxo';
   S.f = Object.assign({ grupo: 'Todos', de: null, ate: null, cc: null, conta: null, dep: null }, S.f);
   let D = null, MESES_DADOS = [];
   const salva = () => guarda.set('estado', { area: S.area, sub: S.sub, f: S.f, piv: S.piv });
@@ -59,11 +63,15 @@
     }));
     const on = $('subtabs').querySelector('[aria-current]');
     if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
-    [...$('tabbar').children].forEach((b) => { if (b.dataset.area === S.area) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    const naBarra = S.area === 'admin' ? 'ajuda' : S.area;
+    [...$('tabbar').children].forEach((b) => { if (b.dataset.area === naBarra) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    $('b-filtros').hidden = S.area === 'ajuda' || S.area === 'admin';
     escopo(); chips();
   }
   function periodoTxt() { return S.f.de === S.f.ate ? mesLongo(S.f.de) : `${mesCurto(S.f.de)} a ${mesCurto(S.f.ate)}`; }
   function escopo() {
+    if (S.area === 'ajuda') { $('escopo').textContent = 'Como usar o Painel CBIC'; return; }
+    if (S.area === 'admin') { $('escopo').textContent = Servidor.admin() ? 'Área restrita · conectado' : 'Área restrita'; return; }
     if (!D) return;
     const g = S.f.grupo === 'Todos' ? 'todos os grupos' : S.f.grupo;
     $('escopo').textContent = S.area === 'fluxo' ? `Ano ${S.fx.ano || ''} · ${S.f.grupo === 'Todos' ? 'CBIC Institucional' : S.f.grupo} ▾` : `${periodoTxt()} · ${g} ▾`;
@@ -78,8 +86,8 @@
     if (S.f.conta && S.area === 'desp') add('Conta: ' + contaNome(S.f.conta), 'conta');
     if (S.f.dep && S.area === 'desp') add('Depto: ' + S.f.dep, 'dep');
   }
-  function irArea(a) { if (a === S.area) { irSub(AREAS[a].subs[0][0]); return; } S.area = a; salva(); moldura(); render(true); }
-  function irSub(s) { S.sub[S.area] = s; salva(); moldura(); render(true); }
+  function irArea(a) { if (a === S.area) { irSub(AREAS[a].subs[0][0]); return; } if ($('app').classList.contains('full')) { $('app').classList.remove('full'); main.classList.remove('cheia'); } S.area = a; salva(); moldura(); render(true); Servidor.acesso(S.area, S.sub[S.area]); }
+  function irSub(s) { S.sub[S.area] = s; salva(); moldura(); render(true); Servidor.acesso(S.area, s); }
   function mudou() { salva(); escopo(); chips(); render(false); }
   [...$('tabbar').children].forEach((b) => b.addEventListener('click', () => irArea(b.dataset.area)));
 
@@ -142,13 +150,13 @@
           const x = el('button', null, 'Trocar'); x.type = 'button'; x.addEventListener('click', () => { S.f[k] = null; mudou(); desenha(''); box.querySelector('input')?.focus(); });
           a.append(x); box.append(a); return;
         }
-        const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Todos os departamentos' : 'Digite para buscar (ex.: ' + (k === 'cc' ? 'ENIC' : 'passag') + ')'; inp.value = q || '';
+        const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Buscar departamento' : 'Buscar (ex.: ' + (k === 'cc' ? 'ENIC' : 'passag') + ') ou escolha na lista'; inp.value = q || '';
         const ops = el('div', 'ops');
         const lista = () => {
           const t = tira(inp.value);
           const it = conjunto[k].filter((v) => !t || tira(rot[k](v)).includes(t));
-          ops.replaceChildren(...(t || k === 'dep' ? it.slice(0, 80) : []).map((v) => { const b = el('button', null, rot[k](v)); b.type = 'button'; b.addEventListener('click', () => { S.f[k] = v; mudou(); desenha(''); }); return b; }));
-          if ((t || k === 'dep') && !it.length) ops.append(el('div', 'vazio', 'Nada encontrado.'));
+          ops.replaceChildren(...it.slice(0, 400).map((v) => { const b = el('button', null, rot[k](v)); b.type = 'button'; b.addEventListener('click', () => { S.f[k] = v; mudou(); desenha(''); }); return b; }));
+          if (!it.length) ops.append(el('div', 'vazio', 'Nada encontrado.'));
         };
         inp.addEventListener('input', lista); box.append(inp, ops); lista();
       };
@@ -583,15 +591,121 @@
     },
   };
 
+  // ================= AJUDA =================
+  const html = (cls, s) => { const d = el('div', cls); d.innerHTML = s; return d; };
+  const secaoAba = (cor, titulo, texto, subs) => { const c = el('section', 'card secao'); const t = el('div', 'tit'); const i = el('i'); i.style.background = cor; t.append(i, titulo); c.append(t, html('texto', texto));
+    if (subs) { const u = el('ul', 'texto'); subs.forEach(([n, d]) => { const li = el('li'); li.innerHTML = `<b>${n}</b> — ${d}`; u.append(li); }); c.append(u); } return c; };
+  telas.ajuda = {
+    uso() {
+      return [card('Bem-vindo ao Painel CBIC', null, html('texto', `
+        <p>O Painel mostra as finanças da CBIC a partir do Sienge: o que foi pago, o que foi recebido, o fluxo de caixa do ano e a comparação com o orçamento.</p>
+        <h4>1. Escolha a área na barra de baixo</h4>
+        <p><b>Fluxo</b>, <b>Despesas</b>, <b>Receitas</b> e <b>Orçamento</b>. O botão colorido é a área aberta. <b>Ajuda</b> traz este guia.</p>
+        <h4>2. Escolha o assunto nos botões do alto</h4>
+        <p>Cada área tem sub-abas (Resumo, Mês a mês, Tabela…). Toque numa delas ou deslize o dedo para o lado, fora das tabelas e gráficos, para passar para a próxima.</p>
+        <h4>3. Use os Filtros</h4>
+        <p>O botão <b>Filtros</b>, no canto de cima, escolhe o período, o grupo (Institucional ou convênios), o centro de custo, a conta e o departamento. Os filtros ativos aparecem como etiquetas logo abaixo; toque no × para tirar um.</p>
+        <h4>4. Toque para ver o detalhe</h4>
+        <p>Nas listas, tocar num departamento, centro de custo ou conta filtra todas as telas por ele. Tocar num credor ou num mês do gráfico abre o detalhe.</p>
+        <h4>5. Tabelas</h4>
+        <p>Gire o celular para ver mais meses. Toque na tabela (ou em <b>Tela cheia</b>) para ela ocupar a tela toda; toque de novo ou em <b>Sair</b> para voltar. Os nomes das linhas e os meses ficam fixos enquanto você rola.</p>
+        <h4>6. Instale na tela inicial</h4>
+        <p>No iPhone: abra no Safari, toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. No Android: menu do Chrome › <b>Instalar app</b>.</p>`))];
+    },
+    abas() {
+      return [
+        secaoAba('var(--flx)', 'Fluxo de caixa', '<p>O ano inteiro: realizado do Sienge até o mês de corte e, depois, o planejado da planilha de fluxo. Grupo CBIC Institucional.</p>',
+          [['Resumo', 'saldo previsto para dezembro, receitas, despesas e resultado do ano; escolha o ano e até que mês vale o realizado'], ['Saldo mês a mês', 'gráfico com o resultado de cada mês (barras) e o saldo no fim do mês (linha); tons claros = planejado'], ['Mês', 'saldo inicial, receitas e despesas abertas por linha, resultado e saldo final do mês escolhido'], ['Tabela', 'todas as linhas do fluxo, mês a mês']]),
+        secaoAba('var(--cbic)', 'Despesas', '<p>Tudo o que foi pago no período e nos filtros escolhidos.</p>',
+          [['Resumo', 'total, média por mês, comparação com o mesmo período do ano anterior e os maiores departamentos'], ['Mês a mês', 'pagamentos por mês e por grupo; toque num mês para ver por departamento'], ['Departamentos', 'os 7 departamentos gerenciais (mais o Transitório); toque para filtrar'], ['Centros', 'centros de custo com busca; toque para filtrar'], ['Contas', 'contas do plano financeiro com busca; toque para filtrar'], ['Credores', 'a quem foi pago; toque para ver por mês e por conta'], ['Tabela', 'valores mês a mês por departamento, centro, conta ou classificação']]),
+        secaoAba('var(--rec)', 'Receitas', '<p>Tudo o que foi recebido no período e nos filtros escolhidos.</p>',
+          [['Resumo', 'total, média, comparação com o ano anterior e recebido menos pago'], ['Mês a mês', 'recebimentos por mês e por grupo; toque num mês para ver por conta'], ['Contas', 'contas de receita com busca'], ['Clientes', 'de quem foi recebido'], ['Tabela', 'contas de receita mês a mês']]),
+        secaoAba('var(--orc)', 'Orçamento (orçado × realizado)', '<p>Compara o realizado com o orçamento aprovado de 2026 (escolha um período dentro de 2026, sem filtro de centro de custo).</p>',
+          [['Resumo', 'quanto das receitas e despesas orçadas já foi realizado e o proporcional do período'], ['Receitas / Despesas', 'cada grupo do orçamento: barra escura = realizado, barra clara = orçado no ano'], ['Tabela', 'realizado mês a mês, orçamento e % do ano']]),
+      ];
+    },
+    faq() {
+      const P = [
+        ['De onde vêm os números?', 'Dos lançamentos do Sienge (baixas de contas a pagar e a receber), atualizados de hora em hora. O planejado vem da planilha de fluxo do Superintendente e o orçamento é o aprovado para 2026.'],
+        ['O que é o departamento gerencial?', 'A classificação aprovada em 12/11/2026 em 7 departamentos (Diretoria, Administrativo / Financeiro, Projetos Convênios, Projetos CBIC, Relações Institucionais, Parcerias / Eventos e Comunicação), mais o Transitório. Vem do centro de custo e, nos centros 3, 6 e dos convênios, também do credor.'],
+        ['Por que o total das Despesas é diferente do Fluxo?', 'O Fluxo mostra só o grupo CBIC Institucional e tira transferências e aplicações; Despesas mostra todos os grupos escolhidos no filtro.'],
+        ['Como volto a ver tudo, sem filtros?', 'Abra Filtros e toque em Limpar, ou toque no × de cada etiqueta abaixo do título.'],
+        ['A tabela está cortada. Como vejo os outros meses?', 'Deslize a tabela para o lado, gire o celular ou toque nela para abrir em tela cheia.'],
+        ['Os valores desta versão são reais?', 'Não. Esta é uma demonstração com valores fictícios e nomes de credores e clientes inventados. A versão com dados reais terá login com o e-mail da CBIC.'],
+        ['Encontrei um erro ou tenho uma sugestão.', 'Use “Fale com o administrador”, na aba Ajuda.'],
+      ];
+      const c = el('section', 'card faq'); P.forEach(([q, r]) => { const d = el('details'); d.append(el('summary', null, q), el('p', null, r)); c.append(d); });
+      return [c];
+    },
+    fale() {
+      const f = el('form', 'form'); f.noValidate = true;
+      const campo = (rot, tag, attrs) => { const l = el('label', null, rot); const i = el(tag); Object.assign(i, attrs || {}); l.append(i); f.append(l); return i; };
+      const nome = campo('Seu nome', 'input', { className: 'inp', autocomplete: 'name', id: 'fale-nome' });
+      const cont = campo('E-mail ou telefone para resposta (opcional)', 'input', { className: 'inp', id: 'fale-contato' });
+      const txt = campo('Mensagem', 'textarea', { id: 'fale-texto', placeholder: 'Escreva sua dúvida, sugestão ou o erro que encontrou.' });
+      const b = el('button', 'prim', 'Enviar ao administrador'); b.type = 'submit'; f.append(b);
+      const res = el('div');
+      f.addEventListener('submit', async (e) => { e.preventDefault(); if (!txt.value.trim()) { res.replaceChildren(el('div', 'aviso', 'Escreva a mensagem antes de enviar.')); return; }
+        const r = await Servidor.enviarMensagem({ nome: nome.value.trim(), contato: cont.value.trim(), texto: txt.value.trim() });
+        txt.value = ''; res.replaceChildren(el('div', 'ok', 'Mensagem enviada.'), ...(Servidor.modo === 'demo' ? [el('p', 'nota', r.aviso)] : [])); });
+      const adm = el('button', 'link-adm'); adm.type = 'button'; adm.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Área do administrador';
+      adm.addEventListener('click', () => irArea('admin'));
+      return [card('Fale com o administrador', 'O administrador recebe sua mensagem e responde pelo contato informado.', f, res), adm];
+    },
+  };
+
+  // ================= ADMINISTRADOR =================
+  function loginAdmin() {
+    const f = el('form', 'form'); const l = el('label', null, 'Senha do administrador'); const i = el('input'); i.type = 'password'; i.className = 'inp'; i.id = 'adm-senha'; i.autocomplete = 'current-password'; l.append(i);
+    const b = el('button', 'prim', 'Entrar'); b.type = 'submit'; const res = el('div'); f.append(l, b, res);
+    f.addEventListener('submit', async (e) => { e.preventDefault(); if (await Servidor.entrar(i.value)) { escopo(); render(true); } else res.replaceChildren(el('div', 'aviso', 'Senha incorreta.')); });
+    return [card('Área restrita', 'Leitura das mensagens, acessos e erros do app.', f), ...(Servidor.modo === 'demo' ? [el('p', 'nota', 'Demonstração: a senha é cbic2026 e os dados mostrados são só os deste aparelho.')] : [])];
+  }
+  const restrito = (fn) => () => (Servidor.admin() ? fn() : loginAdmin());
+  const quando = (iso) => { const d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+  const NOME_TELA = (k) => { const [a, s] = k.split('/'); const A = AREAS[a]; return A ? `${A.titulo} › ${(A.subs.find((x) => x[0] === s) || [s, s])[1]}` : k; };
+  telas.admin = {
+    resumo: restrito(() => {
+      const e = Servidor.estatisticas(), m = Servidor.mensagens(), er = Servidor.erros(); const novas = m.filter((x) => !x.lida).length;
+      const sair = el('button', 'btn', 'Sair da área restrita'); sair.type = 'button'; sair.addEventListener('click', () => { Servidor.sair(); escopo(); render(true); });
+      return [grade(kpi('Aberturas do app', int.format(e.aberturas || 0), e.primeira ? `desde ${quando(e.primeira)}` : '', 'hero'),
+        kpi('Mensagens novas', int.format(novas), `${int.format(m.length)} no total`), kpi('Erros registrados', int.format(er.length), er[0] ? `último em ${quando(er[0].quando)}` : 'nenhum'),
+        kpi('Telas visitadas', int.format(d3.sum(Object.values(e.telas || {}))), 'toques em abas e sub-abas', 'wide')),
+        ...(Servidor.modo === 'demo' ? [el('p', 'aviso', 'Demonstração sem servidor: os números são só deste aparelho. Com o servidor (fase 2, com a TI), mostram todos os usuários, e cada mensagem nova avisa o administrador no celular.')] : []), sair];
+    }),
+    msgs: restrito(() => {
+      const m = Servidor.mensagens(); if (!m.length) return [el('div', 'vazio', 'Nenhuma mensagem.')];
+      const box = el('div', 'lista');
+      m.forEach((x) => { const d = el('div', 'msg' + (x.lida ? '' : ' nova')); d.append(el('div', 'q', `${quando(x.quando)} · ${x.nome || 'sem nome'}${x.contato ? ' · ' + x.contato : ''}`), el('div', null, x.texto));
+        if (!x.lida) { const b = el('button', 'btn', 'Marcar como lida'); b.type = 'button'; b.addEventListener('click', () => { Servidor.marcarLida(x.id); render(false); }); d.append(b); } box.append(d); });
+      return [box];
+    }),
+    uso: restrito(() => {
+      const e = Servidor.estatisticas(); const t = Object.entries(e.telas || {}).sort((a, b) => b[1] - a[1]); const tot = d3.sum(t, (x) => x[1]);
+      const dias = Object.entries(e.dias || {}).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14);
+      const maxV = d3.max(t, (x) => x[1]) || 1; const lt = el('div', 'lista');
+      t.forEach(([k, v]) => { const x = el('div', 'item'); const vv = el('div', 'val', int.format(v)); vv.append(el('small', null, pct.format(v / tot)));
+        const bar = el('div', 'bar'); const f = el('i'); f.style.width = (100 * v / maxV).toFixed(1) + '%'; bar.append(f); x.append(el('div', 'n', NOME_TELA(k)), vv, bar); lt.append(x); });
+      const ld = el('div', 'lista'); dias.forEach(([d, v]) => { const x = el('div', 'item'); x.append(el('div', 'n', d.split('-').reverse().join('/')), el('div', 'val', int.format(v) + ' aberturas')); ld.append(x); });
+      return [card('Telas mais visitadas', 'Toques em cada aba e sub-aba.', t.length ? lt : el('div', 'vazio', 'Sem registros.')), card('Aberturas por dia', null, dias.length ? ld : el('div', 'vazio', 'Sem registros.'))];
+    }),
+    erros: restrito(() => {
+      const er = Servidor.erros(); if (!er.length) return [el('div', 'vazio', 'Nenhum erro registrado.')];
+      const box = el('div', 'lista'); er.forEach((x) => { const d = el('div', 'msg'); d.append(el('div', 'q', `${quando(x.quando)} · ${x.onde}`), el('div', null, x.msg)); box.append(d); });
+      const b = el('button', 'btn', 'Limpar a lista'); b.type = 'button'; b.addEventListener('click', () => { Servidor.limparErros(); render(false); });
+      return [box, b];
+    }),
+  };
+
   // ---------- desenho ----------
   function render(topo) {
-    if (!D) return;
+    const semDados = S.area === 'ajuda' || S.area === 'admin';
+    if (!D && !semDados) return;
     const fn = telas[S.area][S.sub[S.area]] || telas[S.area].resumo;
     let nodes;
     try { nodes = fn(); } catch (e) { console.error(e); nodes = [el('div', 'vazio', 'Algo deu errado nesta tela.')]; }
     const rodape = el('div', 'demo');
-    rodape.innerHTML = D.demo ? '<b>Demonstração com valores fictícios.</b> ' : '';
-    rodape.append(`Dados de ${D.atualizacao?.pagamentos || '—'}`);
+    if (D) { rodape.innerHTML = D.demo ? '<b>Demonstração com valores fictícios.</b> ' : ''; rodape.append(`Dados de ${D.atualizacao?.pagamentos || '—'}`); }
     main.replaceChildren(...nodes, ...($('app').classList.contains('full') ? [] : [rodape]));
     if (topo) main.scrollTop = 0;
   }
@@ -605,6 +719,10 @@
     MESES_DADOS = [...new Set([...D.pagamentos, ...D.receitas].map((r) => r.m))].sort();
     padraoPeriodo(false);
     moldura(); render(true);
-  }).catch((e) => { main.replaceChildren(el('div', 'vazio', 'Não foi possível carregar os dados: ' + e.message)); });
+  }).catch((e) => { Servidor.erro(e.message, 'carregar dados'); main.replaceChildren(el('div', 'vazio', 'Não foi possível carregar os dados: ' + e.message)); });
+  window.addEventListener('error', (e) => Servidor.erro(e.message, (e.filename || '').split('/').pop() + ':' + (e.lineno || '')));
+  window.addEventListener('unhandledrejection', (e) => Servidor.erro(e.reason?.message || e.reason, 'promessa'));
+  Servidor.acesso('_abertura');
   moldura();
+  if (S.area === 'ajuda' || S.area === 'admin') render(true);
 })();

@@ -24,18 +24,19 @@
       <h1 id="titulo">Painel CBIC</h1>
       <button type="button" class="sub" id="escopo" aria-label="Período e filtros">—</button>
     </div>
-    <button type="button" class="ibtn" id="b-filtros" aria-label="Filtros" aria-haspopup="dialog">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span class="cnt" id="f-cnt" hidden></span>
+    <button type="button" class="bfiltro" id="b-filtros" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg><span>Filtros</span><span class="cnt" id="f-cnt" hidden></span>
     </button>
   </header>
   <nav class="subtabs hs" id="subtabs" aria-label="Seções"></nav>
   <div class="chips hs" id="chips"></div>
   <main id="main" tabindex="-1"><div class="carregando" id="carregando"><span class="spin"></span>Carregando dados…</div></main>
-  <nav class="tabbar" id="tabbar" aria-label="Áreas">
-    <button type="button" data-area="fluxo" style="--tc: var(--flx)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg><span>Fluxo</span></button>
-    <button type="button" data-area="desp" style="--tc: var(--cbic)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg><span>Despesas</span></button>
-    <button type="button" data-area="rec" style="--tc: var(--rec)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V8M6 13l6-6 6 6M5 4h14"/></svg><span>Receitas</span></button>
-    <button type="button" data-area="orc" style="--tc: var(--orc)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></svg><span>Orçamento</span></button>
+  <nav class="tabbar" id="tabbar" aria-label="Áreas do painel">
+    <button type="button" data-area="fluxo" style="--tc: var(--flx)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18c3 0 4-6 7-6s3 3 5 3 3-7 6-9"/><circle cx="21" cy="6" r="1.2" fill="currentColor"/><path d="M3 21h18"/></svg></span><span>Fluxo</span></button>
+    <button type="button" data-area="desp" style="--tc: var(--cbic)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M16 13.5h2"/><path d="M7 7V5.5A1.5 1.5 0 0 1 8.5 4h7A1.5 1.5 0 0 1 17 5.5V7"/><path d="M12 10v6m-2.5-2.5L12 16l2.5-2.5"/></svg></span><span>Despesas</span></button>
+    <button type="button" data-area="rec" style="--tc: var(--rec)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="9" cy="16" rx="6" ry="2.5"/><path d="M3 16v2.5C3 19.9 5.7 21 9 21s6-1.1 6-2.5V16"/><path d="M17 11V3m-3 3 3-3 3 3"/></svg></span><span>Receitas</span></button>
+    <button type="button" data-area="orc" style="--tc: var(--orc)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></span><span>Orçamento</span></button>
+    <button type="button" data-area="ajuda" style="--tc: var(--aju)"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><circle cx="12" cy="17" r=".9" fill="currentColor"/></svg></span><span>Ajuda</span></button>
   </nav>
 </div>
 
@@ -59,6 +60,7 @@
   <div class="sh-body" id="sh-det-b"></div>
 </section>
 
+<script src="servidor.js"></script>
 <script src="fonte.js"></script>
 <script src="app.js"></script>
 <script>
