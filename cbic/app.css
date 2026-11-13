@@ -274,3 +274,17 @@ textarea { width: 100%; min-height: 120px; padding: 10px 12px; border-radius: 12
   .tt h1 { font-size: 1.22rem; }
 }
 .card .nota + .form { margin-top: 10px; }
+/* filtros com caixas de marcar (13/11/2026) */
+.busca .acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.busca .acoes button { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 999px; padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+.busca .acoes .cont { margin-left: auto; font-size: 12px; color: var(--mut); }
+.busca .acoes .cont.alerta { color: var(--cbic); font-weight: 700; }
+.busca .ops .op { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.busca .ops .op:last-child { border-bottom: 0; }
+.busca .ops .op .cx { flex: none; width: 20px; height: 20px; border-radius: 5px; border: 2px solid var(--mut); display: grid; place-items: center; }
+.busca .ops .op.on .cx { background: var(--tc, var(--cbic)); border-color: var(--tc, var(--cbic)); }
+.busca .ops .op.on .cx::after { content: ''; width: 5px; height: 10px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: translateY(-1px) rotate(45deg); }
+.busca .ops .op .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.busca .ops .op:not(.on) .nm { color: var(--mut); text-decoration: line-through; }
+.busca .ops .op .so { all: unset; flex: none; font-size: 12px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--mut); cursor: pointer; }
+.busca .ops { grid-template-columns: minmax(0, 1fr); }

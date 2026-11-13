@@ -8,6 +8,30 @@
   const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
   const brl2 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const num2 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Filtros com vários itens (13/11/2026, igual ao painel oficial): vazio = todos; um nome = só ele;
+  // '{"fora":[...]}' = todos menos estes; '{"so":[...]}' = só estes.
+  const F = (() => {
+    const cache = new Map();
+    const ler = (v) => {
+      if (v == null || v === '') return null; if (cache.has(v)) return cache.get(v);
+      let f = { so: new Set([v]) };
+      if (typeof v === 'string' && v[0] === '{') { try { const o = JSON.parse(v); if (Array.isArray(o.fora)) f = { fora: new Set(o.fora) }; else if (Array.isArray(o.so)) f = { so: new Set(o.so) }; } catch (e) { /* */ } }
+      if (cache.size > 50) cache.clear(); cache.set(v, f); return f;
+    };
+    return {
+      ler,
+      casa(v, x) { const f = ler(v); return !f || (f.so ? f.so.has(x) : !f.fora.has(x)); },
+      gravar(marcados, todos) {
+        const m = new Set(marcados); if (m.size === todos.length) return null; if (!m.size) return JSON.stringify({ so: [] }); if (m.size === 1) return [...m][0];
+        const fora = todos.filter((t) => !m.has(t)); return fora.length < m.size ? JSON.stringify({ fora }) : JSON.stringify({ so: [...m] });
+      },
+      texto(v, curto) {
+        const f = ler(v); if (!f) return null; curto = curto || ((s) => s);
+        if (f.so) { const l = [...f.so]; return !l.length ? 'nenhum' : l.length === 1 ? curto(l[0]) : l.length === 2 ? l.map(curto).join(' e ') : `${l.length} marcados`; }
+        const l = [...f.fora]; return l.length === 1 ? 'todos menos ' + curto(l[0]) : `todos menos ${l.length}`;
+      },
+    };
+  })();
   const pct = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 1 });
   const int = new Intl.NumberFormat('pt-BR');
   const compact = (v) => {
@@ -82,9 +106,9 @@
     const box = $('chips'); box.replaceChildren();
     const add = (txt, k) => { const c = el('button', 'chip'); c.type = 'button'; c.append(el('span', null, txt), el('b', null, '×')); c.addEventListener('click', () => { S.f[k] = k === 'grupo' ? 'Todos' : null; mudou(); }); box.append(c); };
     if (S.f.grupo !== 'Todos') add(S.f.grupo, 'grupo');
-    if (S.f.cc && S.area !== 'orc') add('Centro: ' + ccNome(S.f.cc), 'cc');
-    if (S.f.conta && S.area === 'desp') add('Conta: ' + contaNome(S.f.conta), 'conta');
-    if (S.f.dep && S.area === 'desp') add('Depto: ' + S.f.dep, 'dep');
+    if (S.f.cc && S.area !== 'orc') add('Centro: ' + F.texto(S.f.cc, ccNome), 'cc');
+    if (S.f.conta && S.area === 'desp') add('Conta: ' + F.texto(S.f.conta, contaNome), 'conta');
+    if (S.f.dep && S.area === 'desp') add('Depto: ' + F.texto(S.f.dep), 'dep');
   }
   function irArea(a) { if (a === S.area) { irSub(AREAS[a].subs[0][0]); return; } if ($('app').classList.contains('full')) { $('app').classList.remove('full'); main.classList.remove('cheia'); } S.area = a; salva(); moldura(); render(true); Servidor.acesso(S.area, S.sub[S.area]); }
   function irSub(s) { S.sub[S.area] = s; salva(); moldura(); render(true); Servidor.acesso(S.area, s); }
@@ -141,26 +165,34 @@
       dep: DEPS.filter((d) => base.some((r) => r.dg === d)),
     };
     const rot = { cc: ccNome, conta: (c) => c, dep: (d) => d };
+    // caixas de marcar: todos marcados de início; desmarque o que não quer ver (mesma regra do painel oficial)
     document.querySelectorAll('#sh-filtros .busca').forEach((box) => {
-      const k = box.dataset.campo;
-      const desenha = (q) => {
-        box.replaceChildren();
-        if (S.f[k]) {
-          const a = el('div', 'atual'); a.append(el('span', null, rot[k](S.f[k])));
-          const x = el('button', null, 'Trocar'); x.type = 'button'; x.addEventListener('click', () => { S.f[k] = null; mudou(); desenha(''); box.querySelector('input')?.focus(); });
-          a.append(x); box.append(a); return;
-        }
-        const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Buscar departamento' : 'Buscar (ex.: ' + (k === 'cc' ? 'ENIC' : 'passag') + ') ou escolha na lista'; inp.value = q || '';
-        const ops = el('div', 'ops');
-        const lista = () => {
-          const t = tira(inp.value);
-          const it = conjunto[k].filter((v) => !t || tira(rot[k](v)).includes(t));
-          ops.replaceChildren(...it.slice(0, 400).map((v) => { const b = el('button', null, rot[k](v)); b.type = 'button'; b.addEventListener('click', () => { S.f[k] = v; mudou(); desenha(''); }); return b; }));
-          if (!it.length) ops.append(el('div', 'vazio', 'Nada encontrado.'));
-        };
-        inp.addEventListener('input', lista); box.append(inp, ops); lista();
+      const k = box.dataset.campo, todos = conjunto[k];
+      const marcados = () => { const f = F.ler(S.f[k]); return new Set(todos.filter((v) => !f || (f.so ? f.so.has(v) : !f.fora.has(v)))); };
+      const grava = (m) => { S.f[k] = F.gravar([...m], todos); mudou(); };
+      const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Buscar departamento' : 'Buscar (ex.: ' + (k === 'cc' ? 'ENIC' : 'passag') + ')';
+      const acoes = el('div', 'acoes'); const bT = el('button'); bT.type = 'button'; const bN = el('button'); bN.type = 'button'; const cont = el('span', 'cont'); acoes.append(bT, bN, cont);
+      const ops = el('div', 'ops'); let achados = [];
+      const lista = () => {
+        const t = tira(inp.value), m = marcados();
+        achados = todos.filter((v) => !t || tira(rot[k](v)).includes(t));
+        const busca = !!t;
+        bT.textContent = busca ? `Marcar os ${achados.length}` : 'Marcar todos'; bN.textContent = busca ? `Desmarcar os ${achados.length}` : 'Desmarcar todos';
+        cont.textContent = `${m.size} de ${todos.length} marcados`; cont.classList.toggle('alerta', !m.size);
+        ops.replaceChildren(...achados.slice(0, 400).map((v) => {
+          const lin = el('div', 'op' + (m.has(v) ? ' on' : '')); lin.setAttribute('role', 'checkbox'); lin.setAttribute('aria-checked', String(m.has(v))); lin.tabIndex = 0;
+          const so = el('button', 'so', 'só este'); so.type = 'button';
+          so.addEventListener('click', (e) => { e.stopPropagation(); grava(new Set([v])); lista(); });
+          lin.append(el('i', 'cx'), el('span', 'nm', rot[k](v)), so);
+          const troca = () => { const mm = marcados(); if (mm.has(v)) mm.delete(v); else mm.add(v); grava(mm); lista(); };
+          lin.addEventListener('click', troca); lin.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); troca(); } });
+          return lin;
+        }));
+        if (!achados.length) ops.append(el('div', 'vazio', 'Nada encontrado.'));
       };
-      desenha('');
+      bT.addEventListener('click', () => { const m = marcados(); achados.forEach((v) => m.add(v)); grava(m); lista(); });
+      bN.addEventListener('click', () => { const m = marcados(); achados.forEach((v) => m.delete(v)); grava(m); lista(); });
+      inp.addEventListener('input', lista); box.replaceChildren(inp, acoes, ops); lista();
     });
   }
   $('f-de').addEventListener('change', (e) => { S.f.de = e.target.value; if (S.f.ate < S.f.de) S.f.ate = S.f.de; montaFiltros(); mudou(); });
@@ -170,8 +202,8 @@
 
   // ---------- recortes ----------
   const noPeriodo = (r) => r.m >= S.f.de && r.m <= S.f.ate;
-  const pagBase = (semDep) => D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc) && (!S.f.conta || r.p === S.f.conta) && (semDep || !S.f.dep || r.dg === S.f.dep));
-  const recBase = () => D.receitas.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc));
+  const pagBase = (semDep) => D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && F.casa(S.f.conta, r.p) && (semDep || F.casa(S.f.dep, r.dg)));
+  const recBase = () => D.receitas.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c));
   const mesesSel = () => MESES_DADOS.filter((m) => m >= S.f.de && m <= S.f.ate);
 
   // ---------- componentes ----------
@@ -322,7 +354,7 @@
     const corte = S.fx.corte; const isReal = (m) => m <= corte;
     const grp = S.f.grupo === 'Todos' ? 'CBIC Institucional' : S.f.grupo;
     const temPlano = plan && plan.ano === ano && grp === 'CBIC Institucional';
-    const noAno = (r) => r.m.startsWith(ano) && grupoOk(r.g, grp) && (!S.f.cc || r.c === S.f.cc);
+    const noAno = (r) => r.m.startsWith(ano) && grupoOk(r.g, grp) && F.casa(S.f.cc, r.c);
     const agg = (rows, fn) => { const mp = new Map(); rows.forEach((r) => { const g = fn(r); if (!mp.has(g)) mp.set(g, new Map()); mp.get(g).set(r.m, (mp.get(g).get(r.m) || 0) + r.v); }); return mp; };
     const R = agg(D.receitas.filter(noAno), REC_FLUXO), Dp = agg(D.pagamentos.filter(noAno), (r) => r.k || 'Ajustar');
     const pl = temPlano ? plan.linhas : [];
@@ -491,7 +523,7 @@
     resumo() {
       const base = recBase(); const rows = base.filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v); const n = mesesSel().length || 1;
       const de0 = addM(S.f.de, -12), ate0 = addM(S.f.ate, -12); const ant = d3.sum(base.filter((r) => r.m >= de0 && r.m <= ate0), (r) => r.v);
-      const pag = d3.sum(D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc) && noPeriodo(r)), (r) => r.v);
+      const pag = d3.sum(D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && noPeriodo(r)), (r) => r.v);
       const saldo = tot - pag; const dv = ant ? tot / ant - 1 : null;
       return [grade(
         kpi('Total recebido', compact(tot), `${periodoTxt()} · ${int.format(d3.sum(rows, (r) => r.n))} lançamentos`, 'hero'),
@@ -536,7 +568,7 @@
     if (c === '2.02.01.06' || c === '2.02.01.07') return DESP_G[12]; if (c.startsWith('2.02')) return DESP_G[11]; if (c.startsWith('2.03')) return DESP_G[13];
     if (c.startsWith('2.04') || c.startsWith('2.05')) return 'Convênios SESI / SENAI'; return DESP_G[18]; };
   function calcOrc() {
-    const ms = mesesSel(); const rr = recBase().filter(noPeriodo), pr = D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc) && noPeriodo(r));
+    const ms = mesesSel(); const rr = recBase().filter(noPeriodo), pr = D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && noPeriodo(r));
     const R = d3.rollup(rr, (v) => d3.sum(v, (r) => r.v), gRec), Dd = d3.rollup(pr, (v) => d3.sum(v, (r) => r.v), gDesp);
     const Rm = d3.rollup(rr, (v) => d3.sum(v, (r) => r.v), gRec, (r) => r.m), Dm = d3.rollup(pr, (v) => d3.sum(v, (r) => r.v), gDesp, (r) => r.m);
     const ano = S.f.de.slice(0, 4); const ok = (D.orcamento || []).length && !S.f.cc && S.f.ate.slice(0, 4) === ano && ano === '2026';
@@ -604,7 +636,7 @@
         <h4>2. Escolha o assunto nos botões do alto</h4>
         <p>Cada área tem sub-abas (Resumo, Mês a mês, Tabela…). Toque numa delas ou deslize o dedo para o lado, fora das tabelas e gráficos, para passar para a próxima.</p>
         <h4>3. Use os Filtros</h4>
-        <p>O botão <b>Filtros</b>, no canto de cima, escolhe o período, o grupo (Institucional ou convênios), o centro de custo, a conta e o departamento. Os filtros ativos aparecem como etiquetas logo abaixo; toque no × para tirar um.</p>
+        <p>O botão <b>Filtros</b>, no canto de cima, escolhe o período, o grupo (Institucional ou convênios), o centro de custo, a conta e o departamento. Centro de custo, conta e departamento vêm com todos os itens marcados: toque nos que não quer ver para desmarcá-los, use <b>Marcar todos</b> / <b>Desmarcar todos</b> (valem para o que a busca encontrou) ou <b>só este</b> para ficar com um só. Os filtros ativos aparecem como etiquetas logo abaixo do título; toque no × para tirar um.</p>
         <h4>4. Toque para ver o detalhe</h4>
         <p>Nas listas, tocar num departamento, centro de custo ou conta filtra todas as telas por ele. Tocar num credor ou num mês do gráfico abre o detalhe.</p>
         <h4>5. Tabelas</h4>
@@ -629,6 +661,7 @@
         ['De onde vêm os números?', 'Dos lançamentos do Sienge (baixas de contas a pagar e a receber), atualizados de hora em hora. O planejado vem da planilha de fluxo do Superintendente e o orçamento é o aprovado para 2026.'],
         ['O que é o departamento gerencial?', 'A classificação aprovada em 12/11/2026 em 7 departamentos (Diretoria, Administrativo / Financeiro, Projetos Convênios, Projetos CBIC, Relações Institucionais, Parcerias / Eventos e Comunicação), mais o Transitório. Vem do centro de custo e, nos centros 3, 6 e dos convênios, também do credor.'],
         ['Por que o total das Despesas é diferente do Fluxo?', 'O Fluxo mostra só o grupo CBIC Institucional e tira transferências e aplicações; Despesas mostra todos os grupos escolhidos no filtro.'],
+        ['Como tiro só alguns centros de custo (ou contas)?', 'Abra Filtros: a lista vem com todos marcados. Toque nos que quer tirar, ou busque parte do nome (ex.: ENIC) e toque em “Desmarcar os …”. A etiqueta mostra, por exemplo, “Centro: todos menos 3”.'],
         ['Como volto a ver tudo, sem filtros?', 'Abra Filtros e toque em Limpar, ou toque no × de cada etiqueta abaixo do título.'],
         ['A tabela está cortada. Como vejo os outros meses?', 'Deslize a tabela para o lado, gire o celular ou toque nela para abrir em tela cheia.'],
         ['Os valores desta versão são reais?', 'Não. Esta é uma demonstração com valores fictícios e nomes de credores e clientes inventados. A versão com dados reais terá login com o e-mail da CBIC.'],
