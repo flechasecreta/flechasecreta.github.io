@@ -20,8 +20,8 @@ svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; 
 .hs::-webkit-scrollbar { display: none; }
 
 /* ---------- moldura do aplicativo: só a área central rola ---------- */
-.app { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto auto auto 1fr auto; max-width: 1100px; margin: 0 auto; background: var(--bg); }
-.top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: calc(6px + var(--safe-t)) max(12px, env(safe-area-inset-right, 0px)) 6px max(12px, env(safe-area-inset-left, 0px)); background: var(--panel); }
+.app { position: fixed; inset: 0; display: grid; grid-template-rows: auto auto auto 1fr auto; max-width: 1100px; margin: 0 auto; background: var(--bg); }
+.top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: max(6px, calc(var(--safe-t) + 12px)) max(12px, env(safe-area-inset-right, 0px)) 6px max(12px, env(safe-area-inset-left, 0px)); background: var(--panel); }
 .logo { height: 30px; width: auto; display: block; }
 @media (max-width: 480px) { .logo { height: 24px; } }
 .mark-x { background: var(--cbic); color: #fff; font-weight: 800; letter-spacing: .06em; font-size: 12px; border-radius: 6px; padding: 5px 7px; line-height: 1; }
@@ -44,7 +44,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; 
 
 main { overflow: auto; -webkit-overflow-scrolling: touch; padding: 12px max(12px, env(safe-area-inset-right, 0px)) 16px max(12px, env(safe-area-inset-left, 0px)); display: grid; gap: 12px; align-content: start; min-height: 0; outline: none; }
 main.cheia { padding: max(6px, env(safe-area-inset-top, 0px)) max(6px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px)); }
-.tabbar { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding: 4px 6px calc(4px + var(--safe-b)); }
+.tabbar { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding: 4px 6px max(4px, calc(var(--safe-b) - 14px)); }
 .tabbar button { all: unset; cursor: pointer; display: grid; justify-items: center; gap: 2px; padding: 6px 2px 4px; border-radius: 12px; color: var(--mut); font-size: 11.5px; font-weight: 600; }
 .tabbar svg { width: 24px; height: 24px; }
 .tabbar button[aria-current="page"] { color: var(--tc); }
@@ -195,7 +195,7 @@ tfoot td:first-child { z-index: 3; }
 /* ---------- celular deitado: barras finas, mais espaço para os dados ---------- */
 @media (orientation: landscape) and (max-height: 520px) {
   .app { grid-template-columns: auto 1fr; grid-template-rows: auto auto auto 1fr; max-width: none; }
-  .top { grid-column: 2; padding: calc(4px + var(--safe-t)) 12px 2px; }
+  .top { grid-column: 2; padding: max(4px, var(--safe-t)) 12px 2px; }
   .top .logo { display: none; }
   .tt h1 { font-size: 1rem; } .tt { display: flex; gap: 10px; align-items: baseline; }
   .ibtn { width: 34px; height: 34px; }
