@@ -99,7 +99,7 @@
     if (!D) return;
     const g = S.f.grupo === 'Todos' ? 'todos os grupos' : S.f.grupo;
     $('escopo').textContent = S.area === 'fluxo' ? `Ano ${S.fx.ano || ''} · ${S.f.grupo === 'Todos' ? 'CBIC Institucional' : S.f.grupo} ▾` : `${periodoTxt()} · ${g} ▾`;
-    const n = ['cc', 'conta', 'dep'].filter((k) => S.f[k]).length + (S.f.grupo !== 'Todos' ? 1 : 0);
+    const n = ['cc', 'conta', 'dep', 'rconta'].filter((k) => S.f[k]).length + (S.f.grupo !== 'Todos' ? 1 : 0);
     $('f-cnt').hidden = !n; $('f-cnt').textContent = n;
   }
   function chips() {
@@ -109,6 +109,7 @@
     if (S.f.cc && S.area !== 'orc') add('Centro: ' + F.texto(S.f.cc, ccNome), 'cc');
     if (S.f.conta && S.area === 'desp') add('Conta: ' + F.texto(S.f.conta, contaNome), 'conta');
     if (S.f.dep && S.area === 'desp') add('Depto: ' + F.texto(S.f.dep), 'dep');
+    if (S.f.rconta && S.area === 'rec') add('Conta: ' + F.texto(S.f.rconta, contaNome), 'rconta');
   }
   function irArea(a) { if (a === S.area) { irSub(AREAS[a].subs[0][0]); return; } if ($('app').classList.contains('full')) { $('app').classList.remove('full'); main.classList.remove('cheia'); } S.area = a; salva(); moldura(); render(true); Servidor.acesso(S.area, S.sub[S.area]); }
   function irSub(s) { S.sub[S.area] = s; salva(); moldura(); render(true); Servidor.acesso(S.area, s); }
@@ -139,7 +140,7 @@
   const abreFiltros = () => { montaFiltros(); abre($('sh-filtros')); };
   $('b-filtros').addEventListener('click', abreFiltros);
   $('escopo').addEventListener('click', abreFiltros);
-  $('f-limpar').addEventListener('click', () => { S.f = { grupo: 'Todos', de: S.f.de, ate: S.f.ate, cc: null, conta: null, dep: null }; padraoPeriodo(true); montaFiltros(); mudou(); });
+  $('f-limpar').addEventListener('click', () => { S.f = { grupo: 'Todos', de: S.f.de, ate: S.f.ate, cc: null, conta: null, dep: null, rconta: null }; padraoPeriodo(true); montaFiltros(); mudou(); });
 
   function padraoPeriodo(forca) {
     const ult = MESES_DADOS[MESES_DADOS.length - 1];
@@ -163,14 +164,15 @@
       cc: [...new Set([...base, ...D.receitas.filter((r) => grupoOk(r.g, S.f.grupo))].map((r) => r.c))].sort((a, b) => ccNome(a).localeCompare(ccNome(b), 'pt')),
       conta: [...new Set(base.map((r) => r.p))].sort(),
       dep: DEPS.filter((d) => base.some((r) => r.dg === d)),
+      rconta: [...new Set(D.receitas.filter((r) => grupoOk(r.g, S.f.grupo)).map((r) => r.p))].sort(),
     };
-    const rot = { cc: ccNome, conta: (c) => c, dep: (d) => d };
+    const rot = { cc: ccNome, conta: (c) => c, dep: (d) => d, rconta: (c) => c };
     // caixas de marcar: todos marcados de início; desmarque o que não quer ver (mesma regra do painel oficial)
     document.querySelectorAll('#sh-filtros .busca').forEach((box) => {
       const k = box.dataset.campo, todos = conjunto[k];
       const marcados = () => { const f = F.ler(S.f[k]); return new Set(todos.filter((v) => !f || (f.so ? f.so.has(v) : !f.fora.has(v)))); };
       const grava = (m) => { S.f[k] = F.gravar([...m], todos); mudou(); };
-      const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Buscar departamento' : 'Buscar (ex.: ' + (k === 'cc' ? 'ENIC' : 'passag') + ')';
+      const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Buscar departamento' : 'Buscar (ex.: ' + (k === 'cc' ? 'ENIC' : k === 'rconta' ? 'emprést' : 'passag') + ')';
       const acoes = el('div', 'acoes'); const bT = el('button'); bT.type = 'button'; const bN = el('button'); bN.type = 'button'; const cont = el('span', 'cont'); acoes.append(bT, bN, cont);
       const ops = el('div', 'ops'); let achados = [];
       const lista = () => {
@@ -203,7 +205,7 @@
   // ---------- recortes ----------
   const noPeriodo = (r) => r.m >= S.f.de && r.m <= S.f.ate;
   const pagBase = (semDep) => D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && F.casa(S.f.conta, r.p) && (semDep || F.casa(S.f.dep, r.dg)));
-  const recBase = () => D.receitas.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c));
+  const recBase = (semConta) => D.receitas.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && (semConta || F.casa(S.f.rconta, r.p)));  // Conta de receita vale só para Receitas
   const mesesSel = () => MESES_DADOS.filter((m) => m >= S.f.de && m <= S.f.ate);
 
   // ---------- componentes ----------
@@ -543,7 +545,7 @@
     conta() {
       const rows = recBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
       const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), n: d3.sum(v, (r) => r.n) }), (r) => r.p).map(([k, o]) => ({ key: k, label: contaNome(k), sub: codigo(k) + ' · ' + int.format(o.n) + ' lanç.', v: o.v })).sort((a, b) => b.v - a.v);
-      return lista(it, tot, { busca: 'Buscar conta de receita' });
+      return [el('p', 'nota', 'Toque numa conta para ver só ela.'), ...lista(it, tot, { busca: 'Buscar conta de receita', onClick: (i) => { S.f.rconta = i.key; mudou(); irSub('resumo'); } })];
     },
     cli() {
       const rows = recBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
@@ -568,7 +570,7 @@
     if (c === '2.02.01.06' || c === '2.02.01.07') return DESP_G[12]; if (c.startsWith('2.02')) return DESP_G[11]; if (c.startsWith('2.03')) return DESP_G[13];
     if (c.startsWith('2.04') || c.startsWith('2.05')) return 'Convênios SESI / SENAI'; return DESP_G[18]; };
   function calcOrc() {
-    const ms = mesesSel(); const rr = recBase().filter(noPeriodo), pr = D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && noPeriodo(r));
+    const ms = mesesSel(); const rr = recBase(true).filter(noPeriodo), pr = D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && F.casa(S.f.cc, r.c) && noPeriodo(r));
     const R = d3.rollup(rr, (v) => d3.sum(v, (r) => r.v), gRec), Dd = d3.rollup(pr, (v) => d3.sum(v, (r) => r.v), gDesp);
     const Rm = d3.rollup(rr, (v) => d3.sum(v, (r) => r.v), gRec, (r) => r.m), Dm = d3.rollup(pr, (v) => d3.sum(v, (r) => r.v), gDesp, (r) => r.m);
     const ano = S.f.de.slice(0, 4); const ok = (D.orcamento || []).length && !S.f.cc && S.f.ate.slice(0, 4) === ano && ano === '2026';
@@ -636,7 +638,7 @@
         <h4>2. Escolha o assunto nos botões do alto</h4>
         <p>Cada área tem sub-abas (Resumo, Mês a mês, Tabela…). Toque numa delas ou deslize o dedo para o lado, fora das tabelas e gráficos, para passar para a próxima.</p>
         <h4>3. Use os Filtros</h4>
-        <p>O botão <b>Filtros</b>, no canto de cima, escolhe o período, o grupo (Institucional ou convênios), o centro de custo, a conta e o departamento. Centro de custo, conta e departamento vêm com todos os itens marcados: toque nos que não quer ver para desmarcá-los, use <b>Marcar todos</b> / <b>Desmarcar todos</b> (valem para o que a busca encontrou) ou <b>só este</b> para ficar com um só. Os filtros ativos aparecem como etiquetas logo abaixo do título; toque no × para tirar um.</p>
+        <p>O botão <b>Filtros</b>, no canto de cima, escolhe o período, o grupo (Institucional ou convênios), o centro de custo, a conta e o departamento (em Despesas) e a conta de receita (em Receitas). Centro de custo, conta e departamento vêm com todos os itens marcados: toque nos que não quer ver para desmarcá-los, use <b>Marcar todos</b> / <b>Desmarcar todos</b> (valem para o que a busca encontrou) ou <b>só este</b> para ficar com um só. Os filtros ativos aparecem como etiquetas logo abaixo do título; toque no × para tirar um.</p>
         <h4>4. Toque para ver o detalhe</h4>
         <p>Nas listas, tocar num departamento, centro de custo ou conta filtra todas as telas por ele. Tocar num credor ou num mês do gráfico abre o detalhe.</p>
         <h4>5. Tabelas</h4>
@@ -661,6 +663,7 @@
         ['De onde vêm os números?', 'Dos lançamentos do Sienge (baixas de contas a pagar e a receber), atualizados de hora em hora. O planejado vem da planilha de fluxo do Superintendente e o orçamento é o aprovado para 2026.'],
         ['O que é o departamento gerencial?', 'A classificação aprovada em 12/11/2026 em 7 departamentos (Diretoria, Administrativo / Financeiro, Projetos Convênios, Projetos CBIC, Relações Institucionais, Parcerias / Eventos e Comunicação), mais o Transitório. Vem do centro de custo e, nos centros 3, 6 e dos convênios, também do credor.'],
         ['Por que o total das Despesas é diferente do Fluxo?', 'O Fluxo mostra só o grupo CBIC Institucional e tira transferências e aplicações; Despesas mostra todos os grupos escolhidos no filtro.'],
+        ['Como vejo as receitas sem os empréstimos?', 'Na área Receitas, abra Filtros e, em “Conta de receita”, toque em Empréstimos para desmarcar (ou busque “emprést” e toque em “Desmarcar os …”). A etiqueta mostra “Conta: todos menos Empréstimos…”. Esse filtro vale só para Receitas.'],
         ['Como tiro só alguns centros de custo (ou contas)?', 'Abra Filtros: a lista vem com todos marcados. Toque nos que quer tirar, ou busque parte do nome (ex.: ENIC) e toque em “Desmarcar os …”. A etiqueta mostra, por exemplo, “Centro: todos menos 3”.'],
         ['Como volto a ver tudo, sem filtros?', 'Abra Filtros e toque em Limpar, ou toque no × de cada etiqueta abaixo do título.'],
         ['A tabela está cortada. Como vejo os outros meses?', 'Deslize a tabela para o lado, gire o celular ou toque nela para abrir em tela cheia.'],
