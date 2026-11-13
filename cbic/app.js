@@ -1,0 +1,610 @@
+// Painel CBIC — aplicativo web (protótipo de 13/11/2026).
+// Barra de baixo com 4 áreas; em cada área, sub-abas que cabem numa tela (deslize para trocar).
+// Só a área central rola. Tabelas: tela própria, toque para tela cheia, sugestão de girar o celular.
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  const brl2 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num2 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 1 });
+  const int = new Intl.NumberFormat('pt-BR');
+  const compact = (v) => {
+    const a = Math.abs(v), s = v < 0 ? '−' : '';
+    if (a >= 1e6) return s + 'R$ ' + (a / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi';
+    if (a >= 1e4) return s + 'R$ ' + (a / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' mil';
+    return s + brl.format(a);
+  };
+  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const mesCurto = (m) => MESES[+m.slice(5, 7) - 1] + '/' + m.slice(2, 4);
+  const mesLongo = (m) => MESES[+m.slice(5, 7) - 1] + '/' + m.slice(0, 4);
+  const addM = (m, k) => { const d = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7) - 1 + k, 1)); return d.toISOString().slice(0, 7); };
+  const ccNome = (c) => String(c).trim().replace(/^\d+\s-\s/, '');
+  const contaNome = (c) => String(c).replace(/^[\d.]+\s-\s/, '');
+  const codigo = (c) => (String(c).match(/^[\d.]+/) || [''])[0];
+  const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+  const tira = (s) => norm(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const GRUPOS = ['CBIC Institucional', 'Convênio SESI', 'Convênio SENAI', 'Convênio ENBPar'];
+  const corG = (g) => ['var(--g1)', 'var(--g2)', 'var(--g3)', 'var(--g4)'][Math.max(0, GRUPOS.indexOf(g))];
+  const grupoOk = (g, sel) => sel === 'Todos' || (sel === 'Convênios' ? g !== 'CBIC Institucional' : g === sel);
+  const DEPS = ['Diretoria', 'Administrativo / Financeiro', 'Projetos Convênios', 'Projetos CBIC', 'Relações Institucionais', 'Parcerias / Eventos', 'Comunicação', 'Transitório'];
+  const guarda = { get: (k) => { try { return JSON.parse(localStorage.getItem('painel-cbic:' + k)); } catch (e) { return null; } },
+    set: (k, v) => { try { localStorage.setItem('painel-cbic:' + k, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ } } };
+
+  // ---------- estado ----------
+  const AREAS = {
+    fluxo: { titulo: 'Fluxo de caixa', cor: 'var(--flx)', subs: [['resumo', 'Resumo'], ['saldo', 'Saldo mês a mês'], ['mes', 'Mês'], ['tabela', 'Tabela']] },
+    desp: { titulo: 'Despesas', cor: 'var(--cbic)', subs: [['resumo', 'Resumo'], ['mensal', 'Mês a mês'], ['dep', 'Departamentos'], ['cc', 'Centros'], ['conta', 'Contas'], ['cred', 'Credores'], ['tabela', 'Tabela']] },
+    rec: { titulo: 'Receitas', cor: 'var(--rec)', subs: [['resumo', 'Resumo'], ['mensal', 'Mês a mês'], ['conta', 'Contas'], ['cli', 'Clientes'], ['tabela', 'Tabela']] },
+    orc: { titulo: 'Orçado × realizado', cor: 'var(--orc)', subs: [['resumo', 'Resumo'], ['rec', 'Receitas'], ['desp', 'Despesas'], ['tabela', 'Tabela']] },
+  };
+  const S = Object.assign({ area: 'fluxo', sub: { fluxo: 'resumo', desp: 'resumo', rec: 'resumo', orc: 'resumo' },
+    f: { grupo: 'Todos', de: null, ate: null, cc: null, conta: null, dep: null }, fx: { ano: null, corte: null, mes: null }, piv: 'dg', giroOk: false }, guarda.get('estado') || {});
+  S.f = Object.assign({ grupo: 'Todos', de: null, ate: null, cc: null, conta: null, dep: null }, S.f);
+  let D = null, MESES_DADOS = [];
+  const salva = () => guarda.set('estado', { area: S.area, sub: S.sub, f: S.f, piv: S.piv });
+
+  // ---------- moldura ----------
+  const main = $('main');
+  function moldura() {
+    const A = AREAS[S.area];
+    document.documentElement.style.setProperty('--tc', A.cor);
+    $('titulo').textContent = A.titulo;
+    $('subtabs').replaceChildren(...A.subs.map(([id, nome]) => {
+      const b = el('button', null, nome); b.type = 'button';
+      if (S.sub[S.area] === id) b.setAttribute('aria-current', 'page');
+      b.addEventListener('click', () => irSub(id));
+      return b;
+    }));
+    const on = $('subtabs').querySelector('[aria-current]');
+    if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+    [...$('tabbar').children].forEach((b) => { if (b.dataset.area === S.area) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    escopo(); chips();
+  }
+  function periodoTxt() { return S.f.de === S.f.ate ? mesLongo(S.f.de) : `${mesCurto(S.f.de)} a ${mesCurto(S.f.ate)}`; }
+  function escopo() {
+    if (!D) return;
+    const g = S.f.grupo === 'Todos' ? 'todos os grupos' : S.f.grupo;
+    $('escopo').textContent = S.area === 'fluxo' ? `Ano ${S.fx.ano || ''} · ${S.f.grupo === 'Todos' ? 'CBIC Institucional' : S.f.grupo} ▾` : `${periodoTxt()} · ${g} ▾`;
+    const n = ['cc', 'conta', 'dep'].filter((k) => S.f[k]).length + (S.f.grupo !== 'Todos' ? 1 : 0);
+    $('f-cnt').hidden = !n; $('f-cnt').textContent = n;
+  }
+  function chips() {
+    const box = $('chips'); box.replaceChildren();
+    const add = (txt, k) => { const c = el('button', 'chip'); c.type = 'button'; c.append(el('span', null, txt), el('b', null, '×')); c.addEventListener('click', () => { S.f[k] = k === 'grupo' ? 'Todos' : null; mudou(); }); box.append(c); };
+    if (S.f.grupo !== 'Todos') add(S.f.grupo, 'grupo');
+    if (S.f.cc && S.area !== 'orc') add('Centro: ' + ccNome(S.f.cc), 'cc');
+    if (S.f.conta && S.area === 'desp') add('Conta: ' + contaNome(S.f.conta), 'conta');
+    if (S.f.dep && S.area === 'desp') add('Depto: ' + S.f.dep, 'dep');
+  }
+  function irArea(a) { if (a === S.area) { irSub(AREAS[a].subs[0][0]); return; } S.area = a; salva(); moldura(); render(true); }
+  function irSub(s) { S.sub[S.area] = s; salva(); moldura(); render(true); }
+  function mudou() { salva(); escopo(); chips(); render(false); }
+  [...$('tabbar').children].forEach((b) => b.addEventListener('click', () => irArea(b.dataset.area)));
+
+  // deslizar o dedo na área central troca de sub-aba (exceto dentro de tabelas, gráficos e listas horizontais)
+  (() => {
+    let x0 = 0, y0 = 0, t0 = 0, ok = false;
+    main.addEventListener('touchstart', (e) => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); ok = !e.target.closest('.tbox, .hs, .graf, input, select'); }, { passive: true });
+    main.addEventListener('touchend', (e) => {
+      if (!ok || $('app').classList.contains('full')) return;
+      const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+      if (Math.abs(dx) < 70 || Math.abs(dy) > 45 || Date.now() - t0 > 600) return;
+      const subs = AREAS[S.area].subs.map((s) => s[0]); const i = subs.indexOf(S.sub[S.area]);
+      const j = dx < 0 ? i + 1 : i - 1;
+      if (j >= 0 && j < subs.length) irSub(subs[j]);
+    }, { passive: true });
+  })();
+
+  // ---------- filtros (folha de baixo) ----------
+  const veu = $('veu');
+  function abre(sh) { veu.hidden = false; sh.hidden = false; }
+  function fecha() { veu.hidden = true; document.querySelectorAll('.sheet').forEach((s) => { s.hidden = true; }); }
+  veu.addEventListener('click', fecha);
+  document.querySelectorAll('[data-fecha]').forEach((b) => b.addEventListener('click', fecha));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fecha(); $('app').classList.remove('full'); } });
+  const abreFiltros = () => { montaFiltros(); abre($('sh-filtros')); };
+  $('b-filtros').addEventListener('click', abreFiltros);
+  $('escopo').addEventListener('click', abreFiltros);
+  $('f-limpar').addEventListener('click', () => { S.f = { grupo: 'Todos', de: S.f.de, ate: S.f.ate, cc: null, conta: null, dep: null }; padraoPeriodo(true); montaFiltros(); mudou(); });
+
+  function padraoPeriodo(forca) {
+    const ult = MESES_DADOS[MESES_DADOS.length - 1];
+    if (forca || !S.f.de || !MESES_DADOS.includes(S.f.de) || !MESES_DADOS.includes(S.f.ate)) { S.f.ate = ult; S.f.de = ult.slice(0, 4) + '-01'; if (!MESES_DADOS.includes(S.f.de)) S.f.de = MESES_DADOS[0]; }
+  }
+  function seg(box, ops, atual, fn) {
+    box.replaceChildren(...ops.map(([v, t]) => { const b = el('button', null, t); b.type = 'button'; b.setAttribute('aria-pressed', String(v === atual)); b.addEventListener('click', () => fn(v)); return b; }));
+  }
+  function montaFiltros() {
+    seg($('f-grupo'), [['Todos', 'Todos'], ['CBIC Institucional', 'Institucional'], ['Convênios', 'Convênios'], ['Convênio SESI', 'SESI'], ['Convênio SENAI', 'SENAI'], ['Convênio ENBPar', 'ENBPar']], S.f.grupo, (v) => { S.f.grupo = v; S.f.cc = null; montaFiltros(); mudou(); });
+    const ult = MESES_DADOS[MESES_DADOS.length - 1], ano = ult.slice(0, 4);
+    const rap = { ano: [ano + '-01', ult], m12: [addM(ult, -11), ult], ant: [(+ano - 1) + '-01', (+ano - 1) + '-12'], tudo: [MESES_DADOS[0], ult] };
+    const atualR = Object.keys(rap).find((k) => rap[k][0] === S.f.de && rap[k][1] === S.f.ate) || '';
+    seg($('f-rapido'), [['ano', 'Ano atual'], ['m12', '12 meses'], ['ant', 'Ano anterior'], ['tudo', 'Tudo']], atualR, (k) => { [S.f.de, S.f.ate] = rap[k].map((m) => (MESES_DADOS.includes(m) ? m : (m < MESES_DADOS[0] ? MESES_DADOS[0] : ult))); montaFiltros(); mudou(); });
+    const opsM = MESES_DADOS.slice().reverse().map((m) => new Option(mesLongo(m), m));
+    $('f-de').replaceChildren(...opsM.map((o) => o.cloneNode(true))); $('f-de').value = S.f.de;
+    $('f-ate').replaceChildren(...opsM); $('f-ate').value = S.f.ate;
+    document.querySelectorAll('#sh-filtros [data-so]').forEach((b) => { b.hidden = !b.dataset.so.split(' ').includes(S.area); });
+    const base = D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo));
+    const conjunto = {
+      cc: [...new Set([...base, ...D.receitas.filter((r) => grupoOk(r.g, S.f.grupo))].map((r) => r.c))].sort((a, b) => ccNome(a).localeCompare(ccNome(b), 'pt')),
+      conta: [...new Set(base.map((r) => r.p))].sort(),
+      dep: DEPS.filter((d) => base.some((r) => r.dg === d)),
+    };
+    const rot = { cc: ccNome, conta: (c) => c, dep: (d) => d };
+    document.querySelectorAll('#sh-filtros .busca').forEach((box) => {
+      const k = box.dataset.campo;
+      const desenha = (q) => {
+        box.replaceChildren();
+        if (S.f[k]) {
+          const a = el('div', 'atual'); a.append(el('span', null, rot[k](S.f[k])));
+          const x = el('button', null, 'Trocar'); x.type = 'button'; x.addEventListener('click', () => { S.f[k] = null; mudou(); desenha(''); box.querySelector('input')?.focus(); });
+          a.append(x); box.append(a); return;
+        }
+        const inp = el('input'); inp.type = 'search'; inp.placeholder = k === 'dep' ? 'Todos os departamentos' : 'Digite para buscar (ex.: ' + (k === 'cc' ? 'ENIC' : 'passag') + ')'; inp.value = q || '';
+        const ops = el('div', 'ops');
+        const lista = () => {
+          const t = tira(inp.value);
+          const it = conjunto[k].filter((v) => !t || tira(rot[k](v)).includes(t));
+          ops.replaceChildren(...(t || k === 'dep' ? it.slice(0, 80) : []).map((v) => { const b = el('button', null, rot[k](v)); b.type = 'button'; b.addEventListener('click', () => { S.f[k] = v; mudou(); desenha(''); }); return b; }));
+          if ((t || k === 'dep') && !it.length) ops.append(el('div', 'vazio', 'Nada encontrado.'));
+        };
+        inp.addEventListener('input', lista); box.append(inp, ops); lista();
+      };
+      desenha('');
+    });
+  }
+  $('f-de').addEventListener('change', (e) => { S.f.de = e.target.value; if (S.f.ate < S.f.de) S.f.ate = S.f.de; montaFiltros(); mudou(); });
+  $('f-ate').addEventListener('change', (e) => { S.f.ate = e.target.value; if (S.f.de > S.f.ate) S.f.de = S.f.ate; montaFiltros(); mudou(); });
+
+  function detalhe(titulo, corpo) { $('sh-det-t').textContent = titulo; $('sh-det-b').replaceChildren(...corpo); abre($('sh-det')); }
+
+  // ---------- recortes ----------
+  const noPeriodo = (r) => r.m >= S.f.de && r.m <= S.f.ate;
+  const pagBase = (semDep) => D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc) && (!S.f.conta || r.p === S.f.conta) && (semDep || !S.f.dep || r.dg === S.f.dep));
+  const recBase = () => D.receitas.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc));
+  const mesesSel = () => MESES_DADOS.filter((m) => m >= S.f.de && m <= S.f.ate);
+
+  // ---------- componentes ----------
+  function kpi(k, v, s, cls, vcls) { const d = el('div', 'kpi' + (cls ? ' ' + cls : '')); d.append(el('div', 'k', k), el('div', 'v' + (vcls ? ' ' + vcls : ''), v), el('div', 's', s || '')); return d; }
+  function grade(...k) { const g = el('div', 'kgrid'); g.append(...k); return g; }
+  function card(titulo, nota, ...filhos) { const c = el('section', 'card'); if (titulo) c.append(el('h3', null, titulo)); if (nota) c.append(el('p', 'nota', nota)); c.append(...filhos); return c; }
+  function lista(itens, total, { onClick, busca, max = 200, cor } = {}) {
+    const frag = []; let q = '';
+    const box = el('div', 'lista'); const mais = el('div', 'mais');
+    const desenha = () => {
+      const t = tira(q);
+      const it = itens.filter((i) => !t || tira(i.label + ' ' + (i.sub || '')).includes(t));
+      const maxV = d3.max(itens, (i) => Math.abs(i.v)) || 1;
+      box.replaceChildren(...it.slice(0, max).map((i) => {
+        const b = el('button', 'item'); b.type = 'button';
+        const n = el('div', 'n', i.label); if (i.sub) n.append(el('small', null, i.sub));
+        const v = el('div', 'val', compact(i.v)); v.append(el('small', null, i.extra || (total ? pct.format(i.v / total) : '')));
+        const bar = el('div', 'bar'); const f = el('i'); f.style.width = (100 * Math.abs(i.v) / maxV).toFixed(1) + '%'; if (cor) f.style.background = cor; bar.append(f);
+        b.append(n, v, bar);
+        if (onClick) b.addEventListener('click', () => onClick(i)); else b.style.cursor = 'default';
+        return b;
+      }));
+      if (!it.length) box.replaceChildren(el('div', 'vazio', 'Nada encontrado.'));
+      mais.textContent = it.length > max ? `Mostrando ${max} de ${int.format(it.length)}. Use a busca para achar os demais.` : '';
+    };
+    if (busca) {
+      const w = el('div', 'busca-lista'); const inp = el('input'); inp.type = 'search'; inp.placeholder = busca;
+      inp.addEventListener('input', () => { q = inp.value; desenha(); }); w.append(inp); frag.push(w);
+    }
+    desenha(); frag.push(box, mais);
+    return frag;
+  }
+
+  // gráfico de barras empilhadas por grupo, mês a mês
+  function grafMensal(rows, meses, onPick) {
+    const box = el('div', 'graf'); const leg = el('div', 'legenda');
+    const grupos = GRUPOS.filter((g) => rows.some((r) => r.g === g));
+    leg.append(...grupos.map((g) => { const s = el('span'); const i = el('i'); i.style.background = corG(g); s.append(i, g); return s; }));
+    const por = d3.rollup(rows, (v) => d3.sum(v, (r) => r.v), (r) => r.m, (r) => r.g);
+    const desenha = () => {
+      const W = box.clientWidth; if (!W) return;
+      const H = Math.max(200, Math.min(main.clientHeight - 140, W * 0.75, 420));
+      const mg = { t: 10, r: 6, b: 24, l: 46 };
+      const tot = meses.map((m) => d3.sum(grupos, (g) => por.get(m)?.get(g) || 0));
+      const y = d3.scaleLinear([0, d3.max(tot) || 1], [H - mg.b, mg.t]).nice(4);
+      const x = d3.scaleBand(meses, [mg.l, W - mg.r]).paddingInner(meses.length > 18 ? 0.15 : 0.3);
+      const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', W).attr('height', H);
+      const fy = (v) => v >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' mil';
+      svg.append('g').selectAll('line').data(y.ticks(4)).join('line').attr('x1', mg.l).attr('x2', W - mg.r).attr('y1', y).attr('y2', y).attr('stroke', 'var(--line)');
+      svg.append('g').selectAll('text').data(y.ticks(4)).join('text').attr('x', mg.l - 6).attr('y', (t) => y(t) + 4).attr('text-anchor', 'end').attr('font-size', 11).attr('fill', 'var(--mut)').attr('stroke', 'none').text((t) => (t ? fy(t) : '0'));
+      const passo = Math.ceil(meses.length / Math.max(1, Math.floor((W - mg.l) / 44)));
+      svg.append('g').selectAll('text').data(meses.filter((m, i) => i % passo === 0)).join('text').attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 7).attr('text-anchor', 'middle').attr('font-size', 11).attr('fill', 'var(--mut)').attr('stroke', 'none').text((m) => (meses.length > 12 ? mesCurto(m) : MESES[+m.slice(5, 7) - 1]));
+      meses.forEach((m) => {
+        let acc = 0;
+        grupos.forEach((g) => { const v = por.get(m)?.get(g) || 0; if (v <= 0) return;
+          svg.append('rect').attr('x', x(m)).attr('width', x.bandwidth()).attr('y', y(acc + v)).attr('height', Math.max(0.5, y(acc) - y(acc + v))).attr('fill', corG(g)).attr('stroke', 'none'); acc += v; });
+      });
+      svg.append('g').selectAll('rect').data(meses).join('rect').attr('x', (m) => x(m) - x.step() * 0.1).attr('width', x.step()).attr('y', 0).attr('height', H).attr('fill', 'transparent').attr('stroke', 'none').style('cursor', 'pointer')
+        .on('click', (ev, m) => onPick && onPick(m));
+      box.replaceChildren(svg.node());
+    };
+    requestAnimationFrame(desenha);
+    box._redesenha = desenha;
+    return [box, leg];
+  }
+
+  // tabela dinâmica: linhas × meses
+  function pivot(rows, chave, rotulo, cab, meses, q) {
+    const t = el('table');
+    const por = d3.rollup(rows, (v) => d3.sum(v, (r) => r.v), chave, (r) => r.m);
+    const tot = (k) => d3.sum(por.get(k).values());
+    const t0 = tira(q || '');
+    const ks = [...por.keys()].filter((k) => !t0 || tira(rotulo(k)).includes(t0)).sort((a, b) => tot(b) - tot(a));
+    const f = (v) => (v ? num2.format(v) : '');
+    const th = el('thead'); const hr = el('tr'); hr.append(el('th', null, cab)); meses.forEach((m) => hr.append(el('th', null, mesCurto(m)))); hr.append(el('th', 'tot', 'Total')); th.append(hr);
+    const tb = el('tbody');
+    ks.forEach((k) => { const tr = el('tr'); tr.append(el('td', null, rotulo(k))); meses.forEach((m) => tr.append(el('td', null, f(por.get(k).get(m) || 0)))); tr.append(el('td', 'tot', f(tot(k)))); tb.append(tr); });
+    const tf = el('tfoot'); const fr = el('tr'); fr.append(el('td', null, 'Total'));
+    const col = meses.map((m) => d3.sum(ks, (k) => por.get(k).get(m) || 0)); col.forEach((v) => fr.append(el('td', null, f(v)))); fr.append(el('td', null, f(d3.sum(col)))); tf.append(fr);
+    t.append(th, tb, tf);
+    return t;
+  }
+
+  // tela de tabela: sugestão de girar + caixa com rolagem; toque simples alterna a tela cheia
+  function telaTabela(topo, tabela) {
+    const frag = [];
+    if (!S.giroOk) {
+      const g = el('div', 'giro on');
+      g.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="17" rx="2"/><path d="M3 15a9 9 0 0 0 7 7"/><path d="M3 19v-4h4"/></svg>';
+      g.append(el('span', null, 'Gire o celular para ver mais meses. Toque na tabela para ampliar.'));
+      const x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', 'Dispensar'); x.addEventListener('click', () => { S.giroOk = true; g.remove(); });
+      g.append(x); frag.push(g);
+    }
+    const linha = el('div', 'tabtop');
+    if (topo) linha.append(topo);
+    const bf = el('button', 'btn'); bf.type = 'button';
+    bf.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
+    bf.append(document.createTextNode($('app').classList.contains('full') ? 'Sair' : 'Tela cheia'));
+    bf.addEventListener('click', () => telaCheia());
+    linha.append(bf); frag.push(linha);
+    const box = el('div', 'tbox'); box.append(tabela);
+    let x0 = 0, y0 = 0, t0 = 0, mexeu = false;
+    box.addEventListener('touchstart', (e) => { const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; t0 = Date.now(); mexeu = false; }, { passive: true });
+    box.addEventListener('touchmove', (e) => { const p = e.touches[0]; if (Math.abs(p.clientX - x0) > 8 || Math.abs(p.clientY - y0) > 8) mexeu = true; }, { passive: true });
+    box.addEventListener('touchend', () => { if (!mexeu && Date.now() - t0 < 350) telaCheia(); });
+    frag.push(box);
+    return frag;
+  }
+  function telaCheia(forcar) {
+    const app = $('app'); const vai = forcar !== undefined ? forcar : !app.classList.contains('full');
+    app.classList.toggle('full', vai); main.classList.toggle('cheia', vai);
+    if (vai) S.giroOk = true;
+    render(false);
+  }
+
+  // ================= FLUXO DE CAIXA =================
+  const REC_FLUXO = (r) => {
+    const c = codigo(r.p);
+    if (c === '1.01.01.01') return 'Contribuições associativas';
+    if (c === '1.01.05.02') return 'Contribuição extra';
+    if (c === '1.01.02.01') return 'Convênio CNI';
+    if (c === '1.01.02.02' || c === '1.01.02.03') return 'Convênios SESI / SENAI';
+    if (c === '1.01.02.04') return 'Convênio ENBPar';
+    if (c.startsWith('1.01.04')) return 'Patrocínios';
+    if (c === '1.01.05.04') return 'Receita com cursos';
+    if (c.startsWith('1.01.06')) return 'Receita com inscrições';
+    if (c.startsWith('1.01.10')) return 'Reforma Tributária';
+    if (c.startsWith('1.01.07')) return 'Vícios Construtivos';
+    if (c.startsWith('1.01.08')) return 'Empréstimos bancários (entrada)';
+    if (c.startsWith('1.01.03')) return 'Rendimentos de aplicações';
+    if (c === '1.01.05.06') return 'Receitas de pequena monta';
+    if (c.startsWith('1.01')) return 'Outras receitas';
+    return 'Reembolsos e devoluções (transitórias)';
+  };
+  const SIGLAS = { cni: 'CNI', sesi: 'SESI', senai: 'SENAI', enbpar: 'ENBPar', iof: 'IOF', enic: 'ENIC', cbic: 'CBIC' };
+  const ROTULO = (s) => { const t = String(s || '').trim(); if (t !== t.toUpperCase()) return t; const l = t.charAt(0) + t.slice(1).toLowerCase(); return l.replace(/[\p{L}]+/gu, (w) => SIGLAS[w.toLowerCase()] || w); };
+  function calcFluxo() {
+    const linhasPl = D.planejado || [];
+    const meta = linhasPl.find((r) => r.tipo === 'META') || {};
+    const plan = meta.ano ? { ano: String(meta.ano), saldo: Number(meta.saldo_inicial) || 0, arquivo: meta.arquivo,
+      linhas: linhasPl.filter((r) => r.tipo === 'R' || r.tipo === 'D').map((r) => ({ tipo: r.tipo, rotulo: r.rotulo, classe: r.classe, meses: Array.from({ length: 12 }, (_, i) => Number(r['m' + (i + 1)]) || 0) })) } : null;
+    const hoje = new Date(); const anoAtual = String(hoje.getFullYear());
+    const anos = [...new Set([...MESES_DADOS.map((m) => m.slice(0, 4)), ...(plan ? [plan.ano] : [])])].sort();
+    if (!S.fx.ano || !anos.includes(S.fx.ano)) S.fx.ano = anos.includes(anoAtual) ? anoAtual : anos[anos.length - 1];
+    const ano = S.fx.ano;
+    const mesesAno = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`);
+    if (!S.fx.corte || !S.fx.corte.startsWith(ano)) S.fx.corte = ano < anoAtual ? `${ano}-12` : `${ano}-${String(hoje.getMonth()).padStart(2, '0')}`;
+    const corte = S.fx.corte; const isReal = (m) => m <= corte;
+    const grp = S.f.grupo === 'Todos' ? 'CBIC Institucional' : S.f.grupo;
+    const temPlano = plan && plan.ano === ano && grp === 'CBIC Institucional';
+    const noAno = (r) => r.m.startsWith(ano) && grupoOk(r.g, grp) && (!S.f.cc || r.c === S.f.cc);
+    const agg = (rows, fn) => { const mp = new Map(); rows.forEach((r) => { const g = fn(r); if (!mp.has(g)) mp.set(g, new Map()); mp.get(g).set(r.m, (mp.get(g).get(r.m) || 0) + r.v); }); return mp; };
+    const R = agg(D.receitas.filter(noAno), REC_FLUXO), Dp = agg(D.pagamentos.filter(noAno), (r) => r.k || 'Ajustar');
+    const pl = temPlano ? plan.linhas : [];
+    const linhas = (tipo, mapa) => {
+      const out = [], vistos = new Set();
+      pl.filter((l) => l.tipo === tipo).forEach((l) => { vistos.add(l.classe); out.push({ label: l.rotulo, classe: l.classe, plan: l.meses }); });
+      [...mapa.keys()].filter((k) => !vistos.has(k)).sort().forEach((k) => out.push({ label: k, classe: k, plan: null }));
+      return out.map((l) => ({ ...l, vals: mesesAno.map((m, i) => (isReal(m) ? (mapa.get(l.classe)?.get(m) || 0) : (l.plan ? l.plan[i] : 0))) }));
+    };
+    const LR = linhas('R', R), LD = linhas('D', Dp);
+    const soma = (L) => mesesAno.map((_, i) => d3.sum(L, (l) => l.vals[i]));
+    const rec = soma(LR), desp = soma(LD), res = rec.map((v, i) => v - desp[i]);
+    const saldoIni = temPlano ? plan.saldo : 0;
+    const fim = []; let s = saldoIni; res.forEach((v) => { s += v; fim.push(s); });
+    const ini = mesesAno.map((_, i) => (i === 0 ? saldoIni : fim[i - 1]));
+    if (!S.fx.mes || !S.fx.mes.startsWith(ano)) S.fx.mes = ano === anoAtual ? `${ano}-${String(hoje.getMonth() + 1).padStart(2, '0')}` : `${ano}-12`;
+    return { ano, anos, mesesAno, corte, isReal, grp, temPlano, plan, LR, LD, rec, desp, res, fim, ini, saldoIni, nReal: mesesAno.filter(isReal).length };
+  }
+  function seletoresFluxo(F) {
+    const w = el('div', 'linha-sel');
+    const la = el('label', null, 'Ano'); const sa = el('select'); F.anos.forEach((a) => sa.append(new Option(a, a))); sa.value = F.ano; sa.addEventListener('change', () => { S.fx.ano = sa.value; S.fx.corte = null; S.fx.mes = null; escopo(); render(false); }); la.append(sa);
+    const lc = el('label', null, 'Realizado até'); const sc = el('select'); sc.append(new Option('Nenhum (só planejado)', `${F.ano}-00`)); F.mesesAno.forEach((m) => sc.append(new Option(mesLongo(m), m))); sc.value = F.corte; sc.addEventListener('change', () => { S.fx.corte = sc.value; render(false); }); lc.append(sc);
+    w.append(la, lc); return w;
+  }
+  const telas = {};
+  telas.fluxo = {
+    resumo() {
+      const F = calcFluxo(); const sf = F.fim[11], tr = d3.sum(F.rec), td = d3.sum(F.desp), r = tr - td; const ate = F.nReal ? MESES[F.nReal - 1] : '—';
+      return [seletoresFluxo(F), grade(
+        kpi('Saldo final previsto em dezembro', compact(sf), F.temPlano ? `Começou o ano com ${compact(F.saldoIni)}` : 'Sem saldo inicial informado', 'hero', sf >= 0 ? 'pos' : 'neg'),
+        kpi('Receitas no ano', compact(tr), `${compact(d3.sum(F.rec.slice(0, F.nReal)))} realizado até ${ate} · ${compact(d3.sum(F.rec.slice(F.nReal)))} planejado`),
+        kpi('Despesas no ano', compact(td), `${compact(d3.sum(F.desp.slice(0, F.nReal)))} realizado até ${ate} · ${compact(d3.sum(F.desp.slice(F.nReal)))} planejado`),
+        kpi('Resultado do ano', compact(r), 'Receitas − despesas', 'wide', r >= 0 ? 'pos' : 'neg')),
+      el('p', 'nota', `Realizado do Sienge até o mês de corte; depois, o planejado. Grupo ${F.grp}, sem Conta Capital, transferências e aplicações.${F.temPlano ? '' : ' Sem planejado para este ano/grupo.'}`)];
+    },
+    saldo() {
+      const F = calcFluxo();
+      const box = el('div', 'graf');
+      const desenha = () => {
+        const W = box.clientWidth; if (!W) return;
+        const H = Math.max(220, Math.min(main.clientHeight - 150, 440));
+        const mg = { t: 14, r: 8, b: 24, l: 50 };
+        const lo = Math.min(0, d3.min(F.res), d3.min(F.fim)), hi = Math.max(0, d3.max(F.res), d3.max(F.fim));
+        const y = d3.scaleLinear([lo, hi], [H - mg.b, mg.t]).nice(4);
+        const x = d3.scaleBand(F.mesesAno, [mg.l, W - mg.r]).paddingInner(0.3);
+        const fy = (v) => { const a = Math.abs(v); return (v < 0 ? '−' : '') + (a >= 1e6 ? (a / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : (a / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' mil'); };
+        const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', W).attr('height', H);
+        svg.append('g').selectAll('line').data(y.ticks(4)).join('line').attr('x1', mg.l).attr('x2', W - mg.r).attr('y1', y).attr('y2', y).attr('stroke', (t) => (t === 0 ? 'var(--mut)' : 'var(--line)'));
+        svg.append('g').selectAll('text').data(y.ticks(4)).join('text').attr('x', mg.l - 6).attr('y', (t) => y(t) + 4).attr('text-anchor', 'end').attr('font-size', 11).attr('fill', 'var(--mut)').attr('stroke', 'none').text((t) => (t ? fy(t) : '0'));
+        svg.append('g').selectAll('text').data(F.mesesAno).join('text').attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 7).attr('text-anchor', 'middle').attr('font-size', 11).attr('stroke', 'none')
+          .attr('fill', (m) => (m === S.fx.mes ? 'var(--fg)' : 'var(--mut)')).attr('font-weight', (m) => (m === S.fx.mes ? 700 : 400)).text((m) => MESES[+m.slice(5, 7) - 1]);
+        F.res.forEach((v, i) => { const m = F.mesesAno[i]; svg.append('rect').attr('x', x(m)).attr('width', x.bandwidth()).attr('y', y(Math.max(0, v))).attr('height', Math.max(1, Math.abs(y(v) - y(0)))).attr('rx', 2).attr('stroke', 'none')
+          .attr('fill', v >= 0 ? 'var(--ok)' : 'var(--bad)').attr('fill-opacity', F.isReal(m) ? 0.85 : 0.35); });
+        const pts = F.fim.map((v, i) => [x(F.mesesAno[i]) + x.bandwidth() / 2, y(v)]);
+        const ln = d3.line();
+        if (F.nReal) svg.append('path').attr('d', ln(pts.slice(0, F.nReal))).attr('stroke', 'var(--g1)').attr('stroke-width', 2.5);
+        if (F.nReal < 12) svg.append('path').attr('d', ln(pts.slice(Math.max(0, F.nReal - 1)))).attr('stroke', 'var(--g1)').attr('stroke-width', 2.5).attr('stroke-dasharray', '5 4');
+        pts.forEach((p, i) => svg.append('circle').attr('cx', p[0]).attr('cy', p[1]).attr('r', 3.5).attr('fill', i < F.nReal ? 'var(--g1)' : 'var(--panel)').attr('stroke', 'var(--g1)'));
+        svg.append('g').selectAll('rect').data(F.mesesAno).join('rect').attr('x', (m) => x(m) - x.step() * 0.15).attr('width', x.step()).attr('y', 0).attr('height', H).attr('fill', 'transparent').attr('stroke', 'none').style('cursor', 'pointer')
+          .on('click', (ev, m) => { S.fx.mes = m; irSub('mes'); });
+        box.replaceChildren(svg.node());
+      };
+      requestAnimationFrame(desenha); box._redesenha = desenha;
+      const leg = el('div', 'legenda'); leg.innerHTML = '<span><i style="background:var(--ok)"></i>Resultado positivo</span><span><i style="background:var(--bad)"></i>Negativo</span><span><i style="background:var(--g1)"></i>Saldo no fim do mês</span><span>Tons claros e tracejado = planejado</span>';
+      return [card(`Saldo mês a mês · ${F.ano}`, 'Toque num mês para ver o detalhe.', box, leg)];
+    },
+    mes() {
+      const F = calcFluxo(); const i = F.mesesAno.indexOf(S.fx.mes);
+      const ch = el('div', 'mchips hs');
+      F.mesesAno.forEach((m, k) => { const b = el('button', 'mchip' + (F.isReal(m) ? '' : ' plan')); b.type = 'button'; b.setAttribute('aria-pressed', String(m === S.fx.mes)); b.append(MESES[k], el('small', null, F.isReal(m) ? 'real' : 'plan')); b.addEventListener('click', () => { S.fx.mes = m; render(false); }); ch.append(b); });
+      requestAnimationFrame(() => { const on = ch.querySelector('[aria-pressed="true"]'); if (on) ch.scrollLeft = on.offsetLeft - ch.clientWidth / 2 + on.offsetWidth / 2; });
+      const linha = (t, v, cls) => { const d = el('div', 'mline' + (cls ? ' ' + cls : '')); d.append(el('span', null, t), el('span', v < -0.005 ? 'neg' : '', brl2.format(v))); return d; };
+      const grupo = (t, L, tot) => { const det = el('details', 'mgrp'); const s = el('summary'); s.append(el('span', null, t), el('span', null, brl2.format(tot))); det.append(s);
+        const sub = el('div', 'msub'); L.map((l) => ({ l, v: l.vals[i] })).filter((x) => Math.abs(x.v) >= 0.005).sort((a, b) => b.v - a.v).forEach(({ l, v }) => { const r = el('div'); r.append(el('span', null, ROTULO(l.label)), el('span', null, brl2.format(v))); sub.append(r); });
+        if (!sub.children.length) sub.append(el('div', null, 'Nenhum valor neste mês.')); det.append(sub); return det; };
+      const res = linha('Resultado do mês', F.res[i], 'big'); res.lastChild.className = F.res[i] >= 0 ? 'pos' : 'neg';
+      const c = card(null, null, el('span', 'tag' + (F.isReal(S.fx.mes) ? '' : ' plan'), `${mesLongo(S.fx.mes)} · ${F.isReal(S.fx.mes) ? 'realizado' : 'planejado'}`),
+        linha('Saldo inicial', F.ini[i]), grupo('Receitas', F.LR, F.rec[i]), grupo('Despesas', F.LD, F.desp[i]), res, linha('Saldo final', F.fim[i], 'saldo'));
+      return [ch, c];
+    },
+    tabela() {
+      const F = calcFluxo(); const t = el('table');
+      const f = (v) => (Math.abs(v) >= 0.005 ? (v < 0 ? '(' + num2.format(-v) + ')' : num2.format(v)) : '');
+      const cel = (v, m, cls) => el('td', [m && !F.isReal(m) ? 'plan' : '', cls || '', v < -0.005 ? 'neg' : ''].join(' ').trim() || null, f(v));
+      const th = el('thead'); const hr = el('tr'); hr.append(el('th', null, `Fluxo ${F.ano}`));
+      F.mesesAno.forEach((m) => { const h = el('th', F.isReal(m) ? null : 'plan', mesCurto(m)); h.append(el('small', null, F.isReal(m) ? 'realizado' : 'planejado')); hr.append(h); }); hr.append(el('th', 'tot', 'Total')); th.append(hr);
+      const tb = el('tbody');
+      const row = (lab, vals, cls, sub) => { const tr = el('tr', cls || null); tr.append(el('td', sub ? 'sub' : null, lab)); vals.forEach((v, i) => tr.append(cel(v, F.mesesAno[i]))); tr.append(cel(d3.sum(vals), null, 'tot')); tb.append(tr); };
+      const sec = (lab) => { const tr = el('tr', 'sec'); const td = el('td', null, lab); td.colSpan = 14; tr.append(td); tb.append(tr); };
+      { const tr = el('tr', 'saldo'); tr.append(el('td', null, 'Saldo inicial')); F.ini.forEach((v, i) => tr.append(cel(v, F.mesesAno[i]))); tr.append(el('td')); tb.append(tr); }
+      sec('RECEITAS'); F.LR.forEach((l) => { if (d3.sum(l.vals.map(Math.abs)) || l.plan) row(ROTULO(l.label), l.vals, '', true); }); row('Total das receitas', F.rec, 'tot');
+      sec('DESPESAS'); F.LD.forEach((l) => { if (d3.sum(l.vals.map(Math.abs)) || l.plan) row(ROTULO(l.label), l.vals, '', true); }); row('Total das despesas', F.desp, 'tot');
+      row('Resultado do mês', F.res, 'res');
+      { const tr = el('tr', 'saldo'); tr.append(el('td', null, 'Saldo final')); F.fim.forEach((v, i) => tr.append(cel(v, F.mesesAno[i]))); tr.append(cel(F.fim[11], null, 'tot')); tb.append(tr); }
+      t.append(th, tb);
+      return telaTabela(null, t);
+    },
+  };
+
+  // ================= DESPESAS =================
+  function resumoDespesas() {
+    const base = pagBase(); const rows = base.filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+    const n = mesesSel().length || 1; const de0 = addM(S.f.de, -12), ate0 = addM(S.f.ate, -12);
+    const ant = d3.sum(base.filter((r) => r.m >= de0 && r.m <= ate0), (r) => r.v);
+    const inst = d3.sum(rows.filter((r) => r.g === 'CBIC Institucional'), (r) => r.v);
+    const dv = ant ? tot / ant - 1 : null;
+    const top = d3.rollups(rows, (v) => d3.sum(v, (r) => r.v), (r) => r.dg).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => ({ key: k, label: k, v }));
+    return [grade(
+      kpi('Total pago', compact(tot), `${periodoTxt()} · ${int.format(d3.sum(rows, (r) => r.n))} lançamentos`, 'hero'),
+      kpi('Média mensal', compact(tot / n), `${n} ${n === 1 ? 'mês' : 'meses'}`),
+      kpi('Mesmo período do ano anterior', ant ? compact(ant) : '—', dv === null ? 'Sem dados' : `${dv >= 0 ? '+' : ''}${pct.format(dv)} agora`, null, null),
+      kpi('Institucional × Convênios', tot ? `${pct.format(inst / tot)} · ${pct.format(1 - inst / tot)}` : '—', `${compact(inst)} · ${compact(tot - inst)}`, 'wide')),
+    card('Maiores departamentos', 'Toque para ver todos.', ...lista(top, tot, { onClick: () => irSub('dep') }))];
+  }
+  function credorDetalhe(cred) {
+    const rows = pagBase().filter((r) => noPeriodo(r) && r.f === cred.key); const tot = d3.sum(rows, (r) => r.v);
+    const porMes = d3.rollups(rows, (v) => d3.sum(v, (r) => r.v), (r) => r.m).sort((a, b) => b[0].localeCompare(a[0]));
+    const porConta = d3.rollups(rows, (v) => d3.sum(v, (r) => r.v), (r) => r.p).sort((a, b) => b[1] - a[1]);
+    const l1 = el('div', 'lista'); porMes.forEach(([m, v]) => { const d = el('div', 'item'); d.append(el('div', 'n', mesLongo(m)), el('div', 'val', brl2.format(v))); l1.append(d); });
+    const l2 = el('div', 'lista'); porConta.forEach(([c, v]) => { const d = el('div', 'item'); const n = el('div', 'n', contaNome(c)); n.append(el('small', null, codigo(c))); d.append(n, el('div', 'val', brl2.format(v))); l2.append(d); });
+    detalhe(cred.label, [kpi('Pago no período', brl2.format(tot), periodoTxt(), 'hero'), el('h3', null, 'Por mês'), l1, el('h3', null, 'Por conta'), l2]);
+  }
+  telas.desp = {
+    resumo: resumoDespesas,
+    mensal() {
+      const rows = pagBase().filter(noPeriodo); const ms = mesesSel();
+      const [g, leg] = grafMensal(rows, ms, (m) => {
+        const r2 = rows.filter((r) => r.m === m); const t2 = d3.sum(r2, (r) => r.v);
+        const it = d3.rollups(r2, (v) => d3.sum(v, (r) => r.v), (r) => r.dg).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, label: k, v }));
+        detalhe(`Despesas de ${mesLongo(m)}`, [kpi('Total pago', brl2.format(t2), 'por departamento', 'hero'), ...lista(it, t2)]);
+      });
+      return [card('Pagamentos por mês', 'Barras por grupo. Toque num mês para ver por departamento.', g, leg)];
+    },
+    dep() {
+      const rows = pagBase(true).filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+      const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), ccs: d3.rollups(v, (w) => d3.sum(w, (r) => r.v), (r) => ccNome(r.c)).sort((a, b) => b[1] - a[1]) }), (r) => r.dg)
+        .map(([k, o]) => ({ key: k, label: k, sub: o.ccs.slice(0, 2).map((c) => c[0]).join(', ') + (o.ccs.length > 2 ? '…' : ''), v: o.v })).sort((a, b) => b.v - a.v);
+      return [el('p', 'nota', 'Departamento gerencial (reclassificação aprovada em 12/11/2026). Toque para filtrar todas as telas de Despesas.'), ...lista(it, tot, { onClick: (i) => { S.f.dep = S.f.dep === i.key ? null : i.key; mudou(); irSub('resumo'); } })];
+    },
+    cc() {
+      const rows = pagBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+      const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), n: d3.sum(v, (r) => r.n) }), (r) => r.c).map(([k, o]) => ({ key: k, label: ccNome(k), sub: (String(k).match(/^\d+/) || [''])[0] + ' · ' + int.format(o.n) + ' lanç.', v: o.v })).sort((a, b) => b.v - a.v);
+      return lista(it, tot, { busca: 'Buscar centro de custo', onClick: (i) => { S.f.cc = i.key; mudou(); irSub('resumo'); } });
+    },
+    conta() {
+      const rows = pagBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+      const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), n: d3.sum(v, (r) => r.n) }), (r) => r.p).map(([k, o]) => ({ key: k, label: contaNome(k), sub: codigo(k) + ' · ' + int.format(o.n) + ' lanç.', v: o.v })).sort((a, b) => b.v - a.v);
+      return lista(it, tot, { busca: 'Buscar conta (ex.: passagens)', onClick: (i) => { S.f.conta = i.key; mudou(); irSub('resumo'); } });
+    },
+    cred() {
+      const rows = pagBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+      const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), ps: [...new Set(v.map((r) => contaNome(r.p)))] }), (r) => r.f).map(([k, o]) => ({ key: k, label: k, sub: o.ps.slice(0, 2).join(', ') + (o.ps.length > 2 ? '…' : ''), v: o.v })).sort((a, b) => b.v - a.v);
+      return lista(it, tot, { busca: 'Buscar credor', onClick: credorDetalhe, max: 150 });
+    },
+    tabela() {
+      const rows = pagBase().filter(noPeriodo); const ms = mesesSel();
+      const ops = { dg: ['Departamento', (r) => r.dg, (k) => k], cc: ['Centro de custo', (r) => r.c, ccNome], conta: ['Conta', (r) => r.p, (k) => k], k: ['Classificação', (r) => r.k || 'Ajustar', ROTULO] };
+      const sg = el('div', 'seg hs'); seg(sg, [['dg', 'Departamento'], ['cc', 'Centro'], ['conta', 'Conta'], ['k', 'Classificação']], S.piv, (v) => { S.piv = v; salva(); render(false); });
+      const [cab, ch, rot] = ops[S.piv] || ops.dg;
+      return telaTabela(sg, pivot(rows, ch, rot, cab, ms));
+    },
+  };
+
+  // ================= RECEITAS =================
+  telas.rec = {
+    resumo() {
+      const base = recBase(); const rows = base.filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v); const n = mesesSel().length || 1;
+      const de0 = addM(S.f.de, -12), ate0 = addM(S.f.ate, -12); const ant = d3.sum(base.filter((r) => r.m >= de0 && r.m <= ate0), (r) => r.v);
+      const pag = d3.sum(D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc) && noPeriodo(r)), (r) => r.v);
+      const saldo = tot - pag; const dv = ant ? tot / ant - 1 : null;
+      return [grade(
+        kpi('Total recebido', compact(tot), `${periodoTxt()} · ${int.format(d3.sum(rows, (r) => r.n))} lançamentos`, 'hero'),
+        kpi('Média mensal', compact(tot / n), `${n} ${n === 1 ? 'mês' : 'meses'}`),
+        kpi('Mesmo período do ano anterior', ant ? compact(ant) : '—', dv === null ? 'Sem dados' : `${dv >= 0 ? '+' : ''}${pct.format(dv)} agora`),
+        kpi('Recebido − pago', compact(saldo), `Pagamentos ${compact(pag)} no período`, 'wide', saldo >= 0 ? 'pos' : 'neg'))];
+    },
+    mensal() {
+      const rows = recBase().filter(noPeriodo); const ms = mesesSel();
+      const [g, leg] = grafMensal(rows, ms, (m) => {
+        const r2 = rows.filter((r) => r.m === m); const t2 = d3.sum(r2, (r) => r.v);
+        const it = d3.rollups(r2, (v) => d3.sum(v, (r) => r.v), (r) => r.p).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, label: contaNome(k), sub: codigo(k), v }));
+        detalhe(`Receitas de ${mesLongo(m)}`, [kpi('Total recebido', brl2.format(t2), 'por conta', 'hero'), ...lista(it, t2, { cor: 'var(--rec)' })]);
+      });
+      return [card('Recebimentos por mês', 'Barras por grupo. Toque num mês para ver por conta.', g, leg)];
+    },
+    conta() {
+      const rows = recBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+      const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), n: d3.sum(v, (r) => r.n) }), (r) => r.p).map(([k, o]) => ({ key: k, label: contaNome(k), sub: codigo(k) + ' · ' + int.format(o.n) + ' lanç.', v: o.v })).sort((a, b) => b.v - a.v);
+      return lista(it, tot, { busca: 'Buscar conta de receita' });
+    },
+    cli() {
+      const rows = recBase().filter(noPeriodo); const tot = d3.sum(rows, (r) => r.v);
+      const it = d3.rollups(rows, (v) => ({ v: d3.sum(v, (r) => r.v), ps: [...new Set(v.map((r) => contaNome(r.p)))] }), (r) => r.f).map(([k, o]) => ({ key: k, label: k, sub: o.ps.slice(0, 2).join(', '), v: o.v })).sort((a, b) => b.v - a.v);
+      return lista(it, tot, { busca: 'Buscar cliente', max: 150 });
+    },
+    tabela() { return telaTabela(null, pivot(recBase().filter(noPeriodo), (r) => r.p, (k) => k, 'Conta de receita', mesesSel())); },
+  };
+
+  // ================= ORÇADO × REALIZADO =================
+  const REC_G = ['Receita social (contribuições associativas)', 'Protocolo de intenção (Convênio CNI)', 'Convênios SESI / SENAI', 'Convênio ENBPar', 'Receita patrimonial (aplicações)', 'Patrocínios', 'Outras receitas', 'Inscrições', 'Vícios Construtivos', 'Reforma Tributária', 'Reembolsos e devoluções', 'Empréstimos bancários (entrada)'];
+  const DESP_G = ['Despesas com pessoal', 'Serviços de terceiros e assessorias', 'Meios de comunicação', 'Transporte urbano', 'Material de consumo', 'Manutenção e software', 'Despesas gerais', 'Despesas especiais', 'Despesas com viagens', 'Contribuições associativas', 'Despesas com eventos', 'Despesas e tributos financeiros', 'Empréstimos (amortização e juros)', 'Investimentos patrimoniais', 'Convênios SESI / SENAI', 'Convênio ENBPar', 'Vícios Construtivos', 'Reforma Tributária', 'Adiantamentos e reembolsos'];
+  const gRec = (r) => { const c = codigo(r.p);
+    if (c.startsWith('1.01.01')) return REC_G[0]; if (c === '1.01.02.01') return REC_G[1]; if (c === '1.01.02.02' || c === '1.01.02.03') return REC_G[2]; if (c === '1.01.02.04') return REC_G[3];
+    if (c.startsWith('1.01.03')) return REC_G[4]; if (c.startsWith('1.01.04')) return REC_G[5]; if (c.startsWith('1.01.06')) return REC_G[7]; if (c.startsWith('1.01.07')) return REC_G[8];
+    if (c.startsWith('1.01.08')) return REC_G[11]; if (c.startsWith('1.01.10')) return REC_G[9]; if (c.startsWith('1.01')) return REC_G[6]; return REC_G[10]; };
+  const gDesp = (r) => { const cc = String(r.c), c = codigo(r.p);
+    if (r.g === 'Convênio SESI' || r.g === 'Convênio SENAI') return 'Convênios SESI / SENAI'; if (r.g === 'Convênio ENBPar') return 'Convênio ENBPar';
+    if (cc.startsWith('904 ')) return 'Vícios Construtivos'; if (cc.startsWith('910 ')) return 'Reforma Tributária';
+    const pref = [['2.01.01', 0], ['2.01.02', 1], ['2.01.03', 1], ['2.01.04', 2], ['2.01.05', 3], ['2.01.06', 4], ['2.01.07', 5], ['2.01.13', 5], ['2.01.08', 6], ['2.01.09', 7], ['2.01.10', 8], ['2.01.11', 9], ['2.01.12', 10]];
+    for (const [p, i] of pref) if (c.startsWith(p)) return DESP_G[i];
+    if (c === '2.02.01.06' || c === '2.02.01.07') return DESP_G[12]; if (c.startsWith('2.02')) return DESP_G[11]; if (c.startsWith('2.03')) return DESP_G[13];
+    if (c.startsWith('2.04') || c.startsWith('2.05')) return 'Convênios SESI / SENAI'; return DESP_G[18]; };
+  function calcOrc() {
+    const ms = mesesSel(); const rr = recBase().filter(noPeriodo), pr = D.pagamentos.filter((r) => grupoOk(r.g, S.f.grupo) && (!S.f.cc || r.c === S.f.cc) && noPeriodo(r));
+    const R = d3.rollup(rr, (v) => d3.sum(v, (r) => r.v), gRec), Dd = d3.rollup(pr, (v) => d3.sum(v, (r) => r.v), gDesp);
+    const Rm = d3.rollup(rr, (v) => d3.sum(v, (r) => r.v), gRec, (r) => r.m), Dm = d3.rollup(pr, (v) => d3.sum(v, (r) => r.v), gDesp, (r) => r.m);
+    const ano = S.f.de.slice(0, 4); const ok = (D.orcamento || []).length && !S.f.cc && S.f.ate.slice(0, 4) === ano && ano === '2026';
+    const om = new Map((D.orcamento || []).map((o) => [o.tipo + '|' + o.grupo, Number(o.anual)]));
+    const g = S.f.grupo;
+    const orc = (tipo, gr) => { if (!ok) return 0; const conv = gr.startsWith('Convênio');
+      if (g === 'CBIC Institucional' && conv) return 0; if (g === 'Convênios' && !conv) return 0;
+      if (g === 'Convênio SESI' || g === 'Convênio SENAI') return gr === 'Convênios SESI / SENAI' ? (om.get(tipo + '|' + gr) || 0) * (g === 'Convênio SESI' ? 0.6875 : 0.3125) : 0;
+      if (g === 'Convênio ENBPar') return gr === 'Convênio ENBPar' ? (om.get(tipo + '|' + gr) || 0) : 0;
+      return om.get(tipo + '|' + gr) || 0; };
+    return { ms, R, Dd, Rm, Dm, ok, orc, frac: ms.length / 12, totR: d3.sum(rr, (r) => r.v), totD: d3.sum(pr, (r) => r.v), oR: d3.sum(REC_G, (x) => orc('Receita', x)), oD: d3.sum(DESP_G, (x) => orc('Despesa', x)) };
+  }
+  function listaOrc(O, tipo) {
+    const G = tipo === 'Receita' ? REC_G : DESP_G, M = tipo === 'Receita' ? O.R : O.Dd;
+    const it = G.map((g) => ({ g, v: M.get(g) || 0, o: O.orc(tipo, g) })).filter((x) => x.v || x.o).sort((a, b) => b.o - a.o || b.v - a.v);
+    const box = el('div', 'lista'); const maxV = d3.max(it, (x) => Math.max(x.v, x.o)) || 1;
+    it.forEach((x) => { const d = el('div', 'item'); const n = el('div', 'n', x.g); n.append(el('small', null, x.o ? `Orçado ${compact(x.o)} · proporcional ${compact(x.o * O.frac)}` : 'Sem orçamento'));
+      const v = el('div', 'val', compact(x.v)); v.append(el('small', null, x.o ? pct.format(x.v / x.o) + ' do ano' : ''));
+      const bar = el('div', 'bar'); bar.style.position = 'relative'; const o = el('i', 'orc'); o.style.width = (100 * x.o / maxV) + '%'; o.style.position = 'absolute';
+      const r = el('i'); r.style.width = (100 * x.v / maxV) + '%'; r.style.position = 'relative'; bar.append(o, r); d.append(n, v, bar); box.append(d); });
+    return box;
+  }
+  telas.orc = {
+    resumo() {
+      const O = calcOrc(); const res = O.totR - O.totD;
+      const s = O.ok ? null : 'O orçamento aprovado é de 2026: escolha um período dentro de 2026, sem filtro de centro de custo.';
+      return [grade(
+        kpi('Receitas realizadas', compact(O.totR), O.ok ? `${pct.format(O.totR / O.oR)} de ${compact(O.oR)} orçados` : periodoTxt(), 'hero'),
+        kpi('Despesas realizadas', compact(O.totD), O.ok ? `${pct.format(O.totD / O.oD)} de ${compact(O.oD)}` : periodoTxt()),
+        kpi('Proporcional do período', O.ok ? pct.format(O.frac) : '—', O.ok ? `${O.ms.length} de 12 meses` : ''),
+        kpi('Resultado', compact(res), 'Receitas − despesas', 'wide', res >= 0 ? 'pos' : 'neg')), ...(s ? [el('p', 'nota', s)] : [])];
+    },
+    rec() { const O = calcOrc(); return [el('p', 'nota', 'Barra escura: realizado. Barra clara: orçado no ano.'), listaOrc(O, 'Receita')]; },
+    desp() { const O = calcOrc(); return [el('p', 'nota', 'Barra escura: realizado. Barra clara: orçado no ano.'), listaOrc(O, 'Despesa')]; },
+    tabela() {
+      const O = calcOrc(); const t = el('table'); const f = (v) => (v ? (v < 0 ? '(' + num2.format(-v) + ')' : num2.format(v)) : '');
+      const th = el('thead'); const hr = el('tr'); hr.append(el('th', null, 'Realizado')); O.ms.forEach((m) => hr.append(el('th', null, mesCurto(m)))); hr.append(el('th', 'tot', 'Total'));
+      if (O.ok) ['Orçado 2026', '% do ano'].forEach((x) => hr.append(el('th', null, x))); th.append(hr);
+      const tb = el('tbody');
+      const bloco = (rot, G, M, tipo) => {
+        const s = el('tr', 'sec'); const td = el('td', null, rot); td.colSpan = O.ms.length + 4; s.append(td); tb.append(s);
+        const col = O.ms.map(() => 0); let oT = 0;
+        G.forEach((g) => { const v = O.ms.map((m) => M.get(g)?.get(m) || 0); const o = O.orc(tipo, g); if (!d3.sum(v) && !o) return;
+          const tr = el('tr'); tr.append(el('td', 'sub', g)); v.forEach((x, i) => { col[i] += x; tr.append(el('td', null, f(x))); }); tr.append(el('td', 'tot', f(d3.sum(v))));
+          if (O.ok) { tr.append(el('td', null, f(o))); tr.append(el('td', null, o ? pct.format(d3.sum(v) / o) : '')); } oT += o; tb.append(tr); });
+        const tr = el('tr', 'tot'); tr.append(el('td', null, 'Total ' + rot.toLowerCase())); col.forEach((x) => tr.append(el('td', null, f(x)))); tr.append(el('td', null, f(d3.sum(col))));
+        if (O.ok) { tr.append(el('td', null, f(oT))); tr.append(el('td', null, oT ? pct.format(d3.sum(col) / oT) : '')); } tb.append(tr); return col;
+      };
+      const cr = bloco('Receitas', REC_G, O.Rm, 'Receita'), cd = bloco('Despesas', DESP_G, O.Dm, 'Despesa');
+      const tr = el('tr', 'res'); tr.append(el('td', null, 'Resultado')); cr.forEach((v, i) => { const x = v - cd[i]; tr.append(el('td', x < 0 ? 'neg' : null, f(x))); }); tr.append(el('td', 'tot', f(d3.sum(cr) - d3.sum(cd)))); tb.append(tr);
+      t.append(th, tb); return telaTabela(null, t);
+    },
+  };
+
+  // ---------- desenho ----------
+  function render(topo) {
+    if (!D) return;
+    const fn = telas[S.area][S.sub[S.area]] || telas[S.area].resumo;
+    let nodes;
+    try { nodes = fn(); } catch (e) { console.error(e); nodes = [el('div', 'vazio', 'Algo deu errado nesta tela.')]; }
+    const rodape = el('div', 'demo');
+    rodape.innerHTML = D.demo ? '<b>Demonstração com valores fictícios.</b> ' : '';
+    rodape.append(`Dados de ${D.atualizacao?.pagamentos || '—'}`);
+    main.replaceChildren(...nodes, ...($('app').classList.contains('full') ? [] : [rodape]));
+    if (topo) main.scrollTop = 0;
+  }
+  let rt = null;
+  window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => main.querySelectorAll('.graf').forEach((g) => g._redesenha && g._redesenha()), 120); });
+  window.addEventListener('orientationchange', () => setTimeout(() => render(false), 250));
+
+  Fonte.carregar().then((dados) => {
+    D = dados;
+    D.pagamentos.forEach((r) => { if (!r.dg) r.dg = '(não reclassificado)'; });
+    MESES_DADOS = [...new Set([...D.pagamentos, ...D.receitas].map((r) => r.m))].sort();
+    padraoPeriodo(false);
+    moldura(); render(true);
+  }).catch((e) => { main.replaceChildren(el('div', 'vazio', 'Não foi possível carregar os dados: ' + e.message)); });
+  moldura();
+})();

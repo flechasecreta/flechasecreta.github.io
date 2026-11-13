@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Painel CBIC</title>
+<meta name="description" content="Painel financeiro da CBIC: fluxo de caixa, despesas, receitas e orçamento.">
+<meta name="theme-color" content="#d71920">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Painel CBIC">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icone-32.png">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+</head>
+<body>
+<div id="app" class="app">
+  <header class="top">
+    <span class="mark" aria-hidden="true">CBIC</span>
+    <div class="tt">
+      <h1 id="titulo">Painel CBIC</h1>
+      <button type="button" class="sub" id="escopo" aria-label="Período e filtros">—</button>
+    </div>
+    <button type="button" class="ibtn" id="b-filtros" aria-label="Filtros" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span class="cnt" id="f-cnt" hidden></span>
+    </button>
+  </header>
+  <nav class="subtabs hs" id="subtabs" aria-label="Seções"></nav>
+  <div class="chips hs" id="chips"></div>
+  <main id="main" tabindex="-1"><div class="carregando" id="carregando"><span class="spin"></span>Carregando dados…</div></main>
+  <nav class="tabbar" id="tabbar" aria-label="Áreas">
+    <button type="button" data-area="fluxo" style="--tc: var(--flx)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg><span>Fluxo</span></button>
+    <button type="button" data-area="desp" style="--tc: var(--cbic)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg><span>Despesas</span></button>
+    <button type="button" data-area="rec" style="--tc: var(--rec)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V8M6 13l6-6 6 6M5 4h14"/></svg><span>Receitas</span></button>
+    <button type="button" data-area="orc" style="--tc: var(--orc)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></svg><span>Orçamento</span></button>
+  </nav>
+</div>
+
+<div class="veu" id="veu" hidden></div>
+<section class="sheet" id="sh-filtros" role="dialog" aria-modal="true" aria-labelledby="sh-filtros-t" hidden>
+  <div class="sh-head"><h2 id="sh-filtros-t">Filtros</h2><button type="button" class="link" id="f-limpar">Limpar</button><button type="button" class="ibtn" data-fecha aria-label="Fechar">×</button></div>
+  <div class="sh-body">
+    <div class="fbloco"><span class="flab">Grupo</span><div class="seg hs" id="f-grupo"></div></div>
+    <div class="fbloco"><span class="flab">Período</span>
+      <div class="seg hs" id="f-rapido"></div>
+      <div class="fduplo"><label>De<select id="f-de"></select></label><label>Até<select id="f-ate"></select></label></div>
+    </div>
+    <div class="fbloco" data-so="desp rec"><span class="flab">Centro de custo</span><div class="busca" data-campo="cc"></div></div>
+    <div class="fbloco" data-so="desp"><span class="flab">Conta</span><div class="busca" data-campo="conta"></div></div>
+    <div class="fbloco" data-so="desp"><span class="flab">Departamento</span><div class="busca" data-campo="dep"></div></div>
+  </div>
+  <div class="sh-foot"><button type="button" class="prim" data-fecha>Ver resultado</button></div>
+</section>
+<section class="sheet" id="sh-det" role="dialog" aria-modal="true" aria-labelledby="sh-det-t" hidden>
+  <div class="sh-head"><h2 id="sh-det-t">Detalhe</h2><button type="button" class="ibtn" data-fecha aria-label="Fechar">×</button></div>
+  <div class="sh-body" id="sh-det-b"></div>
+</section>
+
+<script src="fonte.js"></script>
+<script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
