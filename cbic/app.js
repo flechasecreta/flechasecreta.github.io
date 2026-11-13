@@ -403,7 +403,7 @@
       F.mesesAno.forEach((m) => { const h = el('th', F.isReal(m) ? null : 'plan', mesCurto(m)); h.append(el('small', null, F.isReal(m) ? 'realizado' : 'planejado')); hr.append(h); }); hr.append(el('th', 'tot', 'Total')); th.append(hr);
       const tb = el('tbody');
       const row = (lab, vals, cls, sub) => { const tr = el('tr', cls || null); tr.append(el('td', sub ? 'sub' : null, lab)); vals.forEach((v, i) => tr.append(cel(v, F.mesesAno[i]))); tr.append(cel(d3.sum(vals), null, 'tot')); tb.append(tr); };
-      const sec = (lab) => { const tr = el('tr', 'sec'); const td = el('td', null, lab); td.colSpan = 14; tr.append(td); tb.append(tr); };
+      const sec = (lab) => { const tr = el('tr', 'sec'); const td2 = el('td'); td2.colSpan = 13; tr.append(el('td', null, lab), td2); tb.append(tr); };
       { const tr = el('tr', 'saldo'); tr.append(el('td', null, 'Saldo inicial')); F.ini.forEach((v, i) => tr.append(cel(v, F.mesesAno[i]))); tr.append(el('td')); tb.append(tr); }
       sec('RECEITAS'); F.LR.forEach((l) => { if (d3.sum(l.vals.map(Math.abs)) || l.plan) row(ROTULO(l.label), l.vals, '', true); }); row('Total das receitas', F.rec, 'tot');
       sec('DESPESAS'); F.LD.forEach((l) => { if (d3.sum(l.vals.map(Math.abs)) || l.plan) row(ROTULO(l.label), l.vals, '', true); }); row('Total das despesas', F.desp, 'tot');
@@ -569,7 +569,7 @@
       if (O.ok) ['Orçado 2026', '% do ano'].forEach((x) => hr.append(el('th', null, x))); th.append(hr);
       const tb = el('tbody');
       const bloco = (rot, G, M, tipo) => {
-        const s = el('tr', 'sec'); const td = el('td', null, rot); td.colSpan = O.ms.length + 4; s.append(td); tb.append(s);
+        const s = el('tr', 'sec'); const td2 = el('td'); td2.colSpan = O.ms.length + 3; s.append(el('td', null, rot), td2); tb.append(s);
         const col = O.ms.map(() => 0); let oT = 0;
         G.forEach((g) => { const v = O.ms.map((m) => M.get(g)?.get(m) || 0); const o = O.orc(tipo, g); if (!d3.sum(v) && !o) return;
           const tr = el('tr'); tr.append(el('td', 'sub', g)); v.forEach((x, i) => { col[i] += x; tr.append(el('td', null, f(x))); }); tr.append(el('td', 'tot', f(d3.sum(v))));
