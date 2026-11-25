@@ -3511,7 +3511,8 @@ function abrirConversa(c, id){
     menuMensagem(m, {
       responder:function(){ resp=m.id; mostrarResp(); var t=$('#cv-t'); if(t) t.focus(); },
       editar:function(v){ chamar('editarMensagem',{grupoId:S.gid, conversaId:id, id:m.id, texto:v}).then(function(d2){ desenhar(d2); aviso('Mensagem editada.'); }).catch(falha); },
-      apagar:function(){ chamar('apagarMensagem',{grupoId:S.gid, conversaId:id, id:m.id}).then(function(d2){ if(resp===m.id) resp=null; desenhar(d2); mostrarResp(); aviso('Mensagem apagada.'); }).catch(falha); },
+      apagar:function(){ var bl=$$('#chat .bolha[data-m]').filter(function(k){ return k.dataset.m===m.id; })[0]; if(bl) bl.style.display='none';   // some na hora; se o servidor recusar, volta
+        chamar('apagarMensagem',{grupoId:S.gid, conversaId:id, id:m.id}).then(function(d2){ if(resp===m.id) resp=null; if($('#chat')) desenhar(d2); mostrarResp(); aviso('Mensagem apagada.'); }).catch(function(e){ if(bl) bl.style.display=''; falha(e); }); },
       textoApagar:'A mensagem some para você e para a outra pessoa.'
     });
   }
@@ -3570,6 +3571,14 @@ function abrirConversa(c, id){
 /* ---------- aba: mural ---------- */
 function abaMural(c, fresco){
   var ch='mural:'+S.gid; if(fresco){ delete CACHE[ch]; mexeu=false; }
+  /* publicar, editar e apagar já devolvem o mural inteiro: ele é desenhado direto, sem uma segunda consulta ao servidor.
+     Devolve false (e não redesenha) se a pessoa já saiu do mural ou está escrevendo um recado, para não perder o que ela digitou. */
+  function aplicar(ps2, seq){
+    CACHE[ch]={d:ps2, j:JSON.stringify(ps2)}; guardarCache();
+    if(seq!==seqAba) return false;
+    var cp=$('#mu-t'), ax=$('#mu-anexo'); if(cp && (cp.value || document.activeElement===cp || (ax && !ax.hidden))) return false;
+    mexeu=false; abaMural(c); return true;
+  }
   usarCache(ch,'mural',{grupoId:S.gid}, function(ps){
     var anon=false, resp=null, porId={}, anexo=null;
     ps.forEach(function(p){ porId[p.id]=p; });
@@ -3591,7 +3600,8 @@ function abaMural(c, fresco){
     anexo=anexador({caixa:$('#mu-anexo',c), campo:$('#mu-t',c), botao:$('#mu-foto',c), anonimo:function(){ return anon; }});
     $$('[data-an]',c).forEach(function(b){ b.onclick=function(){ anon=b.dataset.an==='1'; $$('[data-an]',c).forEach(function(x){ x.setAttribute('aria-pressed', x===b); }); anexo.atualizar(); }; });
     $$('[data-pimg]',c).forEach(function(d){ d.onclick=function(ev){ if(ev.target.closest('.msg-img[data-img]')) verImagem('MURAL', porId[d.dataset.pimg]); }; });
-    $$('[data-tf]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.tf]; confirmar('Remover a foto?', p.minha? 'A foto sai do mural para todos. O texto do recado continua.' : 'A foto sai do mural para todos e é apagada. O texto do recado continua, com a marca de que a foto foi removida pela administração.', 'Remover foto').then(function(ok){ if(ok) chamar('tirarFotoMural',{grupoId:S.gid, id:p.id}).then(function(){ FOTOS[p.img.mini]=''; abaMural(c, true); aviso('Foto removida.'); }).catch(falha); }); }; });
+    $$('[data-tf]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.tf]; confirmar('Remover a foto?', p.minha? 'A foto sai do mural para todos. O texto do recado continua.' : 'A foto sai do mural para todos e é apagada. O texto do recado continua, com a marca de que a foto foi removida pela administração.', 'Remover foto').then(function(ok){ if(!ok) return; var seq=seqAba, cx=b.closest('.post'), fx=cx && cx.querySelector('[data-pimg]'); if(fx) fx.style.display='none'; b.style.display='none';
+        chamar('tirarFotoMural',{grupoId:S.gid, id:p.id}).then(function(ps2){ FOTOS[p.img.mini]=''; aplicar(ps2, seq); aviso('Foto removida.'); }).catch(function(e){ if(fx) fx.style.display=''; b.style.display=''; falha(e); }); }); }; });
     $$('[data-resp]',c).forEach(function(b){ b.onclick=function(){ resp=b.dataset.resp; mostrarResp(); window.scrollTo({top:0, behavior:'smooth'}); setTimeout(function(){ $('#mu-t',c).focus(); }, 300); }; });
     $('#mu-f',c).onsubmit=function(ev){ ev.preventDefault(); var t=$('#mu-t',c).value.trim(), ft=anexo.pegar(); if(anexo.preparando()) return aviso('Aguarde um instante: a foto ainda está sendo preparada.'); if(!t && !ft) return;
       var args={grupoId:S.gid, texto:t, anonimo:anon, respostaA:resp||''}; if(ft){ args.imagem=ft.imagem; args.miniatura=ft.miniatura; }
@@ -3617,8 +3627,10 @@ function abaMural(c, fresco){
     autoCrescer($('#mu-t',c));
     $$('[data-ed]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.ed];
       if(Date.now()-new Date(p.em).getTime() > 10*60*1000) return aviso('O prazo para editar acabou (10 minutos).', true);
-      editarTexto('Editar recado', p.texto, !!p.img).then(function(v){ if(v==null || v===p.texto) return; chamar('editarMensagem',{grupoId:S.gid, conversaId:'MURAL', id:p.id, texto:v}).then(function(){ abaMural(c, true); aviso('Recado editado.'); }).catch(falha); }); }; });
-    $$('[data-del]',c).forEach(function(b){ b.onclick=function(){ confirmar('Apagar mensagem?','A mensagem sai do mural para todos.','Apagar').then(function(s){ if(s) chamar('apagarMural',{grupoId:S.gid,id:b.dataset.del}).then(function(){ abaMural(c, true); }).catch(falha); }); }; });
+      editarTexto('Editar recado', p.texto, !!p.img).then(function(v){ if(v==null || v===p.texto) return; var seq=seqAba, cx=b.closest('.post'), tx=cx && cx.querySelector('.texto'), antes=tx? tx.innerHTML : ''; if(tx) tx.innerHTML=linkar(v);   // o texto novo aparece na hora
+        chamar('editarMensagem',{grupoId:S.gid, conversaId:'MURAL', id:p.id, texto:v}).then(function(ps2){ aplicar(ps2, seq); aviso('Recado editado.'); }).catch(function(e){ if(tx) tx.innerHTML=antes; falha(e); }); }); }; });
+    $$('[data-del]',c).forEach(function(b){ b.onclick=function(){ confirmar('Apagar mensagem?','A mensagem sai do mural para todos.','Apagar').then(function(s){ if(!s) return; var seq=seqAba, cx=b.closest('.post'); if(cx) cx.style.display='none';   // some na hora; se o servidor recusar, volta
+        chamar('apagarMural',{grupoId:S.gid,id:b.dataset.del}).then(function(ps2){ aplicar(ps2, seq); aviso('Recado apagado.'); }).catch(function(e){ if(cx) cx.style.display=''; falha(e); }); }); }; });
   }, function(){ var t=$('#mu-t'), ax=$('#mu-anexo'); return !t || (!t.value && document.activeElement!==t && (!ax || ax.hidden)); });
 }
 
