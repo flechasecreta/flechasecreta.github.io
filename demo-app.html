@@ -3802,17 +3802,19 @@ function abaAjuda(c){
       bloco('alvo','Meu amigo', lst([
         'Antes do sorteio, mostra a data, o horário, o local e o valor mínimo do presente.',
         'Depois do sorteio, toque em <b>Toque para ver</b> para descobrir quem você tirou (confira se ninguém está olhando a tela!). Aparecem também as sugestões de presente dessa pessoa. O nome some sozinho em 20 segundos.',
-        'Se outras pessoas costumam pegar o seu celular, ative no <b>Perfil</b> a opção <b>Pedir minha senha para ver o amigo secreto</b>: o nome só aparece depois de digitar a senha que você usa para entrar no app.',
+        '<b>Proteção pela senha:</b> o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Ela já vem ligada para todos, para que ninguém que pegue o seu celular descubra o seu amigo secreto. Quem preferir pode desligar no <b>Perfil</b> (também com a senha).',
         'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você.'
       ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
       bloco('balao','Conversas', lst([
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
+        'A conversa <b>Meu amigo secreto</b> também é protegida pela senha, porque o que ele escreve pode revelar quem ele é: na lista aparece “🔒 Protegida pela sua senha” no lugar da última mensagem e, para abrir, o app pede a sua senha. Ela se fecha sozinha se o aplicativo ficar mais de 2 minutos fora da tela. (Vale para quem está com a proteção ligada no Perfil; <b>Quem me tirou</b> e as outras conversas abrem direto.)',
         'Em <b>Nova mensagem</b>, escreva para qualquer pessoa do grupo, com seu nome ou anonimamente.',
         '<b>Toque numa mensagem</b> para responder (citando a mensagem), editar (até 10 minutos depois de enviar) ou apagar. Mensagem que já foi respondida não pode mais ser apagada.',
         '<b>Fotos:</b> toque no botão da câmera, ao lado do campo de texto, para <b>escolher uma foto da galeria</b> ou <b>tirar uma foto na hora</b>. Você também pode <b>colar</b> uma imagem copiada direto no campo de texto. É uma foto por mensagem, com ou sem texto junto. Toque na foto recebida para ver maior.',
         'A foto é reduzida no seu aparelho antes de enviar, e os dados escondidos do arquivo (local onde foi tirada, modelo do celular) são removidos. Mesmo assim, em conversa <b>anônima</b>, cuidado: o que aparece na foto (ambiente, letra, objetos) pode revelar quem você é.',
         'Apagar a mensagem apaga também a foto. Vídeos, PDFs e outros documentos ainda não podem ser enviados.',
         '<b>Links:</b> um endereço escrito na mensagem (começando com <b>https://</b>, <b>http://</b> ou <b>www.</b>) vira um link sublinhado. Toque nele para abrir no navegador, fora do aplicativo; para voltar, feche a página que abriu.',
+        'A mensagem enviada aparece na hora, marcada “enviando…”, enquanto vai para o servidor. Se o envio falhar, o texto volta para o campo e aparece um aviso.',
         'A bolinha vermelha na aba avisa que há mensagem nova.',
         'Ninguém, nem os administradores, consegue ler as conversas dos outros.'
       ]))+
@@ -3887,7 +3889,7 @@ function abaAjuda(c){
     faq('Posso trocar de amigo secreto?', '<div>Não. O sorteio é definitivo e qualquer troca desmancha o círculo, o que o Auditor percebe na revelação.</div>')+
     faq('Mandei uma mensagem errada. Dá para corrigir?', '<div>Sim. Toque na mensagem (nas Conversas) ou em <b>Editar</b> (no Mural) para corrigir até 10 minutos depois de enviar. Depois disso, você ainda pode apagar, desde que ninguém tenha respondido a mensagem.</div>')+
     faq('Mudei de e-mail.', '<div>No <b>Perfil</b>, toque em <b>Trocar meu e-mail</b>. Enviamos um link para o e-mail novo e a troca acontece quando você clicar nele. Senha, conversas e amigo secreto continuam iguais.</div>')+
-    faq('Como recebo avisos no celular?', '<div>Abra o Flecha Secreta pelo <b>ícone na tela de início</b>. No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b>, depois em <b>Permitir notificações</b> e confirme a pergunta do celular. Pronto: os avisos chegam como os de qualquer aplicativo, e tocar neles abre o Flecha Secreta. No iPhone, é preciso o iOS 16.4 ou mais novo (iPhone 8 em diante, atualizado). Quem preferir pode usar o Telegram, na mesma seção. Os avisos de mensagem mostram as primeiras palavras do texto; para esconder, desmarque <b>Mostrar uma prévia das mensagens nos avisos</b>, na mesma seção. Os avisos nunca mostram o nome do seu amigo secreto.</div>')+
+    faq('Como recebo avisos no celular?', '<div>Abra o Flecha Secreta pelo <b>ícone na tela de início</b>. No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b>, depois em <b>Permitir notificações</b> e confirme a pergunta do celular. Pronto: os avisos chegam como os de qualquer aplicativo, e tocar neles abre o Flecha Secreta. No iPhone, é preciso o iOS 16.4 ou mais novo (iPhone 8 em diante, atualizado). Quem preferir pode usar o Telegram, na mesma seção. Os avisos de mensagem mostram as primeiras palavras do texto; para esconder, desmarque <b>Mostrar uma prévia das mensagens nos avisos</b>, na mesma seção. Os avisos nunca mostram o nome do seu amigo secreto e, com a proteção pela senha ligada, também não mostram o texto do que ele respondeu.</div>')+
     faq('Ainda tenho dúvidas.', '<div>No <b>Perfil</b>, use <b>Fale com os administradores</b>: sua mensagem chega para quem organiza o grupo, e a resposta aparece ali mesmo.</div>')+
   '</div></div>';
   c.innerHTML=h;
@@ -4087,7 +4089,7 @@ function desenharTelegram(box){
   }
   if(!eu.avisos){
     box.innerHTML=eu.pushDisponivel? '<div class="muted" style="font-size:13px">Prefere receber os avisos pelo <b>Telegram</b>? Também é gratuito.</div><button class="btn sec peq" id="av-on" style="justify-self:start">'+tg+'Usar o Telegram</button>'
-      : '<div>Receba avisos no celular pelo <b>Telegram</b> '+papel.join(', ')+'.</div><div class="muted" style="font-size:13px">É gratuito. Os avisos nunca mostram o nome do seu amigo secreto.</div><button class="btn sec" id="av-on">'+tg+'Ativar notificações</button>';
+      : '<div>Receba avisos no celular pelo <b>Telegram</b> '+papel.join(', ')+'.</div><div class="muted" style="font-size:13px">É gratuito. Os avisos nunca mostram o nome do seu amigo secreto e, com a proteção pela senha ligada, também não mostram o texto do que ele respondeu.</div><button class="btn sec" id="av-on">'+tg+'Ativar notificações</button>';
     $('#av-on',box).onclick=function(){ ocupado(this, function(){ return chamar('configurarAvisos',{ativar:true}).then(function(e2){ S.eu=e2; desenharTelegram(box); }); }); };
     return;
   }
