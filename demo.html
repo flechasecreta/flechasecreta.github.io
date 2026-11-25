@@ -178,7 +178,7 @@ function informarVisivel(fonte, origem) {
   var v = window.visualViewport, r = frame.getBoundingClientRect();
   var topoV = v ? v.offsetTop : 0, altV = v ? v.height : window.innerHeight;
   // "teclado: true" = o app está encolhido na área visível (ele esconde a barra de abas e cola o campo no fim)
-  try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top, teclado: encolhido }, origem); } catch (e) {}
+  try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top, teclado: encolhido, alt: encolhido ? parseInt(frame.style.height, 10) || 0 : 0 }, origem); } catch (e) {}
   dg('visivel', Math.round(topoV - r.top) + '..' + Math.round(topoV + altV - r.top) + (encolhido ? ' enc' : ''));
 }
 /* Com o teclado aberto, o app passa a ocupar SÓ a área visível acima do teclado, e a página fica parada no alto.

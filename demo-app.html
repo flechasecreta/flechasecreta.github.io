@@ -2521,13 +2521,33 @@ function avisarFoco(ev){
   try{ window.top.postMessage({flecha:'foco'}, PORTAL); }catch(e){}
 }
 document.addEventListener('focusin', avisarFoco);
+/* O iPhone, ao abrir o teclado, empurra a página inteira por um instante se o campo tocado estiver na parte da tela que o
+   teclado vai cobrir (um "salto" de ~0,2 s até a página de entrada recolocar tudo). Para não dar esse salto, o app guarda a
+   altura que sobra com o teclado aberto (aprendida na última vez) e, NO MESMO INSTANTE do toque, já rola o campo para dentro
+   dessa área. Não vale para o campo da conversa (preso no fim da tela) nem para janelas, que têm tratamento próprio. */
+var ALT_TECL=null, preparadoEm=0;
+function altPrevista(){ if(!ALT_TECL){ try{ ALT_TECL=JSON.parse(lsGet('flecha-alt-tecl')||'{}')||{}; }catch(e){ ALT_TECL={}; } } return +ALT_TECL[window.innerWidth]||0; }
+function aprenderAltura(alt){ alt=Math.round(+alt)||0; if(alt<150) return; var atual=altPrevista(); if(atual && atual<=alt) return;   // fica com a menor (teclado mais alto)
+  ALT_TECL[window.innerWidth]=alt; lsSet('flecha-alt-tecl', JSON.stringify(ALT_TECL)); }
+function prepararCampo(ev){
+  var el=ev.target; if(!VIA_PORTAL || !ehCampo(el) || document.body.classList.contains('tecl')) return;
+  var alt=altPrevista(); if(!alt || alt>window.innerHeight-100) return;
+  if(el.closest('.modal-fundo') || el.closest('.compor-wrap')) return;
+  var hd=document.querySelector('.topo'), cab=(hd? Math.max(0, hd.getBoundingClientRect().bottom) : 80)+34, base=alt-16;   // 34 = rótulo do campo
+  var r=el.getBoundingClientRect(); if(base-cab<60 || (r.bottom<=base && r.top>=cab)) return;
+  var passo = r.bottom>base? Math.min(r.bottom-base, r.top-cab) : r.top-cab;
+  if(passo>0){ var mn=document.querySelector('main'), sobra=document.documentElement.scrollHeight-window.innerHeight-window.scrollY;
+    if(mn && sobra<passo){ mn.style.paddingBottom=Math.ceil((parseFloat(getComputedStyle(mn).paddingBottom)||0)+passo-sobra+8)+'px'; } }
+  preparadoEm=Date.now(); window.scrollBy(0, passo);
+}
+document.addEventListener('focusin', prepararCampo);
 // o campo pode já estar em foco (ex.: janelas que focam sozinhas) e o teclado só abrir no toque
 document.addEventListener('touchend', avisarFoco, true);
 document.addEventListener('click', avisarFoco, true);
 /* a página de entrada informa qual faixa do app está visível acima do teclado; o campo em foco é rolado para dentro dela */
 window.addEventListener('message', function(ev){
   if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='visivel') return;
-  marcarTeclado(ev.data.teclado===true);
+  marcarTeclado(ev.data.teclado===true); if(ev.data.teclado===true && ev.data.alt) aprenderAltura(ev.data.alt);
   var el=focoAtual; if(!el || document.activeElement!==el) return;
   var cobre=window.innerHeight-ev.data.ate;   // quanto do app o teclado cobre
   // campo dentro de uma janela (ex.: pedido de senha): sobe a janela inteira para cima do teclado
@@ -2542,7 +2562,7 @@ window.addEventListener('message', function(ev){
     return; }
   // espaço extra no fim da página, para dar para rolar o último campo para cima do teclado
   var mn=document.querySelector('main');
-  if(mn){ var alvoP=cobre>100? cobre+90 : 0, atualP=parseInt(mn.style.paddingBottom,10)||0; if(Math.abs(alvoP-atualP)>40 && (alvoP>atualP || !alvoP)) mn.style.paddingBottom = alvoP? alvoP+'px' : ''; }
+  if(mn){ var alvoP=cobre>100? cobre+90 : 0, atualP=parseInt(mn.style.paddingBottom,10)||0; if(Math.abs(alvoP-atualP)>40 && (alvoP>atualP || !alvoP) && !(ev.data.teclado!==true && Date.now()-preparadoEm<1500)) mn.style.paddingBottom = alvoP? alvoP+'px' : ''; }
   var r=el.getBoundingClientRect(), topo=Math.max(ev.data.de,0)+80, base=ev.data.ate-16;   // 80 = cabeçalho fixo
   if(base-topo < 60) return;
   if(r.bottom > base) window.scrollBy({top:Math.min(r.bottom-base, r.top-topo), behavior:'smooth'});
