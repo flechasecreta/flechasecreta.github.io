@@ -92,6 +92,12 @@ function margens() { var m = document.getElementById('medida'), cs = getComputed
 /* Repassa ao aplicativo os links que chegam por e-mail (?acao=...&t=...) e limpa o endereço */
 var busca = location.search;
 if (busca) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+/* ?diag=1 liga (e ?diag=0 desliga) o modo de diagnóstico do teclado NESTE aparelho; o parâmetro não segue para o aplicativo */
+(function () { try { var q = new URLSearchParams(busca); if (!q.has('diag')) return;
+  if (q.get('diag') === '0') localStorage.removeItem('flecha-diag'); else localStorage.setItem('flecha-diag', '1');
+  q.delete('diag'); var r = q.toString(); busca = r ? '?' + r : ''; } catch (e) {} })();
+var DIAG = null;   // função de registro, só existe com o diagnóstico ligado
+function dg(ev, extra) { if (DIAG) DIAG(ev, extra); }
 var frame = document.getElementById('app');
 frame.src = APP + (busca || '');
 
@@ -108,10 +114,10 @@ window.addEventListener('message', function (ev) {
     document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
   } else if (ev.data.flecha === 'foco') {
     // o teclado está abrindo: informa ao app a faixa visível (em coordenadas do app), algumas vezes enquanto ele sobe
-    var fonte = ev.source, origem = ev.origin;
+    var fonte = ev.source, origem = ev.origin; dg('FOCO');
     [120, 380, 700].forEach(function (ms) { setTimeout(function () { informarVisivel(fonte, origem); }, ms); });
   } else if (ev.data.flecha === 'teclado') {
-    voltarDepois(450);
+    dg('SAIU-FOCO'); voltarDepois(450);
   } else if (ev.data.flecha === 'abrir-link') {
     abrirLink(ev.data.url);
   } else if (/^push-/.test(ev.data.flecha)) {
@@ -147,6 +153,8 @@ function faixaLink(url) {
 }
 function abrirLink(u) {
   var url = enderecoSeguro(u); if (!url) return false;
+  // link desta própria página com "diag": em vez de abrir, liga ou desliga o diagnóstico do teclado neste aparelho
+  try { var o = new URL(url); if (o.origin === location.origin && o.searchParams.has('diag')) { diagLigar(o.searchParams.get('diag') !== '0'); return true; } } catch (e) {}
   var w = null; try { w = window.open(url, '_blank'); } catch (e) {}
   if (w) { try { w.opener = null; } catch (e) {} return true; }
   // não abriu sozinho (bloqueio de janelas): oferece o link num toque direto nesta página, que o celular sempre aceita
@@ -167,12 +175,55 @@ function informarVisivel(fonte, origem) {
   var v = window.visualViewport, r = frame.getBoundingClientRect();
   var topoV = v ? v.offsetTop : 0, altV = v ? v.height : window.innerHeight;
   try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top }, origem); } catch (e) {}
+  dg('visivel', Math.round(topoV - r.top) + '..' + Math.round(topoV + altV - r.top));
 }
 function tecladoAberto() { var v = window.visualViewport; return !!(v && v.height < window.innerHeight - 120); }
 function voltarAoTopo() {
-  if (tecladoAberto()) return;
-  if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) window.scrollTo(0, 0);
+  if (tecladoAberto()) { dg('topo-nao'); return; }
+  if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) { dg('TOPO!'); window.scrollTo(0, 0); } else dg('topo-ok');
 }
+
+/* ---------- Diagnóstico do teclado (só no aparelho em que foi ligado) ----------
+   Mostra, num quadro por cima do aplicativo, o que o celular informa enquanto o teclado abre e fecha: altura visível (h),
+   deslocamento da tela (o), rolagem da página (sY) e os avisos trocados com o aplicativo. Não registra texto digitado nem dado
+   de ninguém, e nada sai do aparelho. Liga com um link desta página com "?diag=1"; desliga com "?diag=0" ou no × do quadro. */
+function diagLigar(sim) {
+  try { if (sim) localStorage.setItem('flecha-diag', '1'); else localStorage.removeItem('flecha-diag'); } catch (e) {}
+  var q = document.getElementById('diag');
+  if (!sim) { DIAG = null; if (q) q.remove(); return; }
+  if (q) return;
+  q = document.createElement('div'); q.id = 'diag';
+  q.style.cssText = 'position:fixed;left:4px;top:calc(env(safe-area-inset-top,0px) + 2px);z-index:50;background:rgba(0,0,0,.8);color:#8dffa8;' +
+    'font:10.5px/1.25 ui-monospace,Menlo,Consolas,monospace;padding:4px 6px;border-radius:6px;pointer-events:none;white-space:pre;max-width:calc(100% - 8px);overflow:hidden';
+  var x = document.createElement('button'); x.type = 'button'; x.textContent = '× desligar diagnóstico';
+  x.style.cssText = 'pointer-events:auto;display:block;border:0;border-radius:4px;background:#8dffa8;color:#000;font:inherit;padding:3px 8px;margin-bottom:3px';
+  x.onclick = function () { diagLigar(false); };
+  var estado = document.createElement('div'), lista = document.createElement('div'); estado.style.color = '#fff';
+  q.appendChild(x); q.appendChild(estado); q.appendChild(lista); document.body.appendChild(q);
+  var t0 = Date.now(), linhas = [], ult = '';
+  function medir() { var v = window.visualViewport, r = frame.getBoundingClientRect();
+    return { h: Math.round(v ? v.height : window.innerHeight), o: Math.round(v ? v.offsetTop : 0), sY: Math.round(window.scrollY || 0),
+      iH: window.innerHeight, ft: Math.round(r.top), fh: Math.round(r.height) }; }
+  function pintar(m) {
+    estado.textContent = 'h=' + m.h + ' o=' + m.o + ' sY=' + m.sY + ' iH=' + m.iH + ' app=' + m.ft + '/' + m.fh + (tecladoAberto() ? ' TECLADO' : ' sem-tecl');
+    lista.textContent = linhas.join('\n');
+    q.style.transform = 'translateY(' + m.o + 'px)';   // acompanha a tela quando o iPhone a empurra para cima
+  }
+  DIAG = function (ev, extra) { var m = medir(), s = ((Date.now() - t0) / 1000 % 1000).toFixed(2);
+    linhas.push((s.length < 6 ? ' ' + s : s) + ' ' + (ev + '         ').slice(0, 9) + ' h=' + m.h + ' o=' + m.o + ' sY=' + m.sY + (extra ? ' ' + extra : ''));
+    if (linhas.length > 14) linhas.shift();
+    ult = m.h + '|' + m.o + '|' + m.sY; pintar(m); };
+  var v = window.visualViewport;
+  if (v) { v.addEventListener('resize', function () { dg('vv-tam'); }); v.addEventListener('scroll', function () { dg('vv-rola'); }); }
+  window.addEventListener('scroll', function () { dg('pag-rola'); });
+  window.addEventListener('resize', function () { dg('jan-tam'); });
+  window.addEventListener('blur', function () { dg('app-foco'); });      // o foco entrou no aplicativo (iframe)
+  window.addEventListener('focus', function () { dg('pag-foco'); });     // o foco voltou para esta página
+  document.addEventListener('visibilitychange', function () { dg(document.hidden ? 'oculta' : 'visivel?'); });
+  setInterval(function () { var m = medir(), k = m.h + '|' + m.o + '|' + m.sY; if (k !== ult) dg('mudou'); else pintar(m); }, 150);
+  dg('ligado');
+}
+try { if (localStorage.getItem('flecha-diag') === '1') diagLigar(true); } catch (e) {}
 var tTopo = null;
 function voltarDepois(ms) { clearTimeout(tTopo); tTopo = setTimeout(voltarAoTopo, ms); }
 if (window.visualViewport) {
