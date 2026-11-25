@@ -1283,7 +1283,29 @@ var Core = (function () {
 
   api.revelarAmigo = function (a) {
     var u = sessao(a.token); conferirSenha(u, a.senha);
-    var r = api.meuAmigo({ token: a.token, grupoId: a.grupoId, _liberado: true }); r.protegido = protegido(u); return r;
+    var r = api.meuAmigo({ token: a.token, grupoId: a.grupoId, _liberado: true }); r.protegido = protegido(u);
+    // quem acabou de digitar a senha para ver o amigo já pode abrir a conversa com ele, sem digitar de novo
+    if (r.nome) { var ca = conversasDoGrupo(a.grupoId).filter(function (c) { return c.tipo === 'amigo' && c.a === u.email; })[0]; if (ca) r.passe = { conversaId: ca.id, passe: novoPasse(u, ca.id) }; }
+    return r;
+  };
+  /* A conversa "Meu amigo secreto" (em que EU escrevo para quem tirei) também revela o amigo: o que ele responde, as fotos,
+     o jeito de escrever. Por isso, para quem tem a proteção ligada, ela segue a mesma regra do nome: sem a senha, o servidor
+     não envia as mensagens, nem a prévia na lista, nem a prévia na notificação. A senha vale por um PASSE temporário
+     (cifrado e assinado com a chave do app; vale só para esta pessoa e esta conversa), renovado enquanto a conversa é usada. */
+  var PASSE_MINUTOS = 20;
+  function conversaProtegida(c, u) { return c.tipo === 'amigo' && c.a === u.email && protegido(u); }
+  function novoPasse(u, cid) { return Cripto.cifrar({ p: 'conversa', e: u.email, c: cid, x: Date.now() + PASSE_MINUTOS * 60000 }); }
+  function passeVale(u, cid, p) {
+    if (!p || typeof p !== 'string' || p.length > 800) return false;
+    try { var d = Cripto.decifrar(p); return !!d && d.p === 'conversa' && d.e === u.email && d.c === cid && d.x > Date.now(); } catch (e) { return false; }
+  }
+  function passeDe(a, cid) { return (a && (a.passe || (a.passes && a.passes[cid]))) || ''; }
+  function liberada(u, c, a) { return !conversaProtegida(c, u) || passeVale(u, c.id, passeDe(a, c.id)); }
+  function exigirPasse(u, c, a) { if (!liberada(u, c, a)) erro('Esta conversa está protegida pela sua senha.'); }
+  api.liberarConversa = function (a) {
+    var u = sessao(a.token), x = exigirMembro(u, a.grupoId), c = exigirConversa(u, x.g.id, a.conversaId);
+    conferirSenha(u, a.senha);
+    return { conversaId: c.id, passe: novoPasse(u, c.id) };
   };
   api.protegerAmigo = function (a) {
     var u = sessao(a.token);
@@ -1390,12 +1412,13 @@ var Core = (function () {
     return bytes ? 'data:image/jpeg;base64,' + Cripto.b64(bytes) : '';
   }
   /* mensagem com imagem que ESTA pessoa pode ver (mesmas regras das mensagens); senão, null */
-  function mensagemComImagem(u, gid, cid, id, memo) {
+  function mensagemComImagem(u, gid, cid, id, memo, a) {
     try {
       var chave = gid + '|' + cid, todas = memo && memo[chave];
+      if (todas === false) return false;
       if (!todas) {   // a conferência de acesso é feita uma vez por conversa em cada chamada (memo vale só para esta pessoa, nesta chamada)
         var x = exigirMembro(u, gid); exigirParticipante(x);
-        if (cid !== 'MURAL') exigirConversa(u, x.g.id, cid);
+        if (cid !== 'MURAL') { var c = exigirConversa(u, x.g.id, cid); if (!liberada(u, c, a)) { if (memo) memo[chave] = false; return false; } }   // false = protegida pela senha (não é "não existe")
         todas = mensagensDe(x.g.id, cid); if (memo) memo[chave] = todas;
       }
       var m = todas.filter(function (k) { return k.id === id; })[0];
@@ -1403,7 +1426,7 @@ var Core = (function () {
     } catch (e) { return null; }
   }
   api.imagem = function (a) {
-    var u = sessao(a.token), m = mensagemComImagem(u, a.grupoId, a.conversaId || 'MURAL', a.id);
+    var u = sessao(a.token), m = mensagemComImagem(u, a.grupoId, a.conversaId || 'MURAL', a.id, null, a);
     var url = m ? lerArquivoImagem(m.img.f) : '';
     if (!url) erro('Esta foto não está mais disponível.');
     return { url: url };
@@ -1418,10 +1441,10 @@ var Core = (function () {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
     exigirParticipante(x);
     return conversasDoGrupo(x.g.id).filter(function (c) { return c.a === u.email || c.b === u.email; }).map(function (c) {
-      var ds = descreverConversa(c, u.email, true), ult = ultimaMensagem(x.g.id, c.id);
+      var ds = descreverConversa(c, u.email, true), ult = ultimaMensagem(x.g.id, c.id), prot = conversaProtegida(c, u);
       var fu = ds.fotoDe ? usuario(ds.fotoDe) : null;
-      return { id: c.id, tipo: c.tipo, titulo: ds.titulo, subtitulo: ds.subtitulo, icone: ds.icone, foto: fu ? fu.foto : '',
-        ultima: ult ? { texto: textoCurto(ult, 80), em: ult.em, minha: ult.lado === (c.a === u.email ? 'a' : 'b') } : null, ordem: c.tipo === 'amigo' ? (c.a === u.email ? 0 : 1) : 2 };
+      return { id: c.id, tipo: c.tipo, titulo: ds.titulo, subtitulo: ds.subtitulo, icone: ds.icone, foto: fu ? fu.foto : '', protegida: prot,
+        ultima: ult ? { texto: prot ? '' : textoCurto(ult, 80), em: ult.em, minha: ult.lado === (c.a === u.email ? 'a' : 'b') } : null, ordem: c.tipo === 'amigo' ? (c.a === u.email ? 0 : 1) : 2 };
     }).sort(function (p, q) { if (p.ordem !== q.ordem) return p.ordem - q.ordem; return ((q.ultima && q.ultima.em) || '') < ((p.ultima && p.ultima.em) || '') ? -1 : 1; });
   };
   function exigirConversa(u, gid, cid) {
@@ -1433,6 +1456,8 @@ var Core = (function () {
   function dentroDoPrazo(em) { return Date.now() - new Date(em).getTime() <= PRAZO_EDICAO; }
   api.mensagens = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), c = exigirConversa(u, x.g.id, a.conversaId);
+    exigirPasse(u, c, a);
+    var prot = conversaProtegida(c, u);
     var lado = c.a === u.email ? 'a' : 'b', ds = descreverConversa(c, u.email, protegido(u));
     var nomeOutro = ds.fotoDe ? nomeDe(ds.fotoDe) : ds.oculto ? 'Seu amigo secreto' : (c.tipo === 'amigo' ? 'Amigo oculto' : 'Anônimo');
     // aviso de "ainda não confirmou": só quando a outra pessoa é conhecida (nunca revela quem me tirou nem remetente anônimo)
@@ -1441,6 +1466,7 @@ var Core = (function () {
     todas.forEach(function (m) { porId[m.id] = m; if (m.resp) resp[m.resp] = 1; });
     function autor(m) { return m.lado === lado ? 'Você' : nomeOutro; }
     return { titulo: ds.titulo, subtitulo: ds.subtitulo, icone: ds.icone, outroPendente: !!(mo && !mo.confirmado), nomeOutro: mo ? nomeDe(ds.fotoDe) : '',
+      protegida: prot, passe: prot ? novoPasse(u, c.id) : '',   // passe renovado a cada leitura: vale enquanto a conversa está em uso
       souAnonimo: lado === 'a' && (c.tipo === 'amigo' || !!c.aAnon),   // quem está deste lado escreve sem se identificar (lembrete ao anexar foto)
       itens: todas.map(function (m) {
         var o = m.resp ? porId[m.resp] : null, minha = m.lado === lado;
@@ -1450,6 +1476,7 @@ var Core = (function () {
   };
   api.enviarMensagem = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), c = exigirConversa(u, x.g.id, a.conversaId);
+    exigirPasse(u, c, a);
     var t = String(a.texto || '').trim(); if (!t && !a.imagem) erro('Escreva uma mensagem.');
     var dados = { lado: c.a === u.email ? 'a' : 'b', texto: t.substr(0, 2000) };
     if (a.respostaA) { if (!mensagensDe(x.g.id, c.id).some(function (m) { return m.id === a.respostaA; })) erro('A mensagem que você quer responder foi apagada.'); dados.resp = a.respostaA; }
@@ -1461,6 +1488,7 @@ var Core = (function () {
     else titulo = (souA && c.aAnon) ? 'Você recebeu uma mensagem anônima 🤫' : nomeDe(u.email) + ' te mandou uma mensagem';
     if (primeiraVez('msg:' + c.id + ':' + dest, 60)) {
       var ud = usuario(dest), previa = !(ud && ud.semPrevia === 'sim');
+      if (c.tipo === 'amigo' && dest === c.a && querProtecao(ud)) previa = false;   // resposta do amigo secreto a quem tem a proteção: o aviso nunca traz o texto
       // mensagem só com imagem: a prévia diz "📷 Foto" (a imagem em si nunca vai na notificação)
       avisar(dest, titulo, previa ? previaAviso(t, !!img, 100) : 'Abra o Flecha Secreta, na aba Conversas, para ' + (img && !t ? 'ver.' : 'ler.'), { ir: 'conversas', g: x.g.id, c: c.id });
     }
@@ -1468,7 +1496,7 @@ var Core = (function () {
   };
   function previaAviso(t, temImagem, n) { return temImagem ? '📷 ' + (t ? '"' + resumo(t, n) + '"' : 'Foto') : '"' + resumo(t, n) + '"'; }
   /* Editar (até 10 minutos depois) e apagar as próprias mensagens: conversas e mural */
-  function minhaMensagem(u, x, conversaId, id) {
+  function minhaMensagem(u, x, conversaId, id, a) {
     var lista2, minha;
     if (conversaId === 'MURAL') {
       exigirParticipante(x);
@@ -1476,6 +1504,7 @@ var Core = (function () {
       minha = function (m) { return m.autor === u.email; };
     } else {
       var c = exigirConversa(u, x.g.id, conversaId), lado = c.a === u.email ? 'a' : 'b';
+      exigirPasse(u, c, a);
       lista2 = mensagensDe(x.g.id, c.id);
       minha = function (m) { return m.lado === lado; };
     }
@@ -1485,7 +1514,7 @@ var Core = (function () {
   }
   api.editarMensagem = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), cid = a.conversaId || 'MURAL';
-    var r = minhaMensagem(u, x, cid, a.id), t = String(a.texto || '').trim();
+    var r = minhaMensagem(u, x, cid, a.id, a), t = String(a.texto || '').trim();
     if (!r.minha) erro('Você só pode editar suas mensagens.');
     if (!dentroDoPrazo(r.m.em)) erro('O prazo para editar acabou: a mensagem só pode ser editada até 10 minutos depois de enviada.');
     if (!t && !r.m.img) erro('A mensagem não pode ficar vazia. Se quiser, apague a mensagem.');
@@ -1497,7 +1526,7 @@ var Core = (function () {
   api.apagarMensagem = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
     if (!a.conversaId || a.conversaId === 'MURAL') return api.apagarMural(a);
-    var r = minhaMensagem(u, x, a.conversaId, a.id);
+    var r = minhaMensagem(u, x, a.conversaId, a.id, a);
     if (!r.minha) erro('Você só pode apagar suas mensagens.');
     if (mensagensDe(x.g.id, a.conversaId).some(function (k) { return k.resp === a.id; })) erro('Esta mensagem já foi respondida e não pode mais ser apagada.');
     removerMensagens(function (k) { return k.id === a.id && k.grupoId === x.g.id; });
@@ -2309,7 +2338,8 @@ var Core = (function () {
     Object.keys(pedidas).forEach(function (k) {
       var p = /^f:m\.([A-Za-z0-9]+)\.([A-Za-z0-9]+)\.([A-Za-z0-9]+)$/.exec(k); if (!p || minis >= 8) return;
       minis++;
-      var m = mensagemComImagem(eu, p[1], p[2], p[3], memo), url = m ? lerArquivoImagem(m.img.m) : '';
+      var m = mensagemComImagem(eu, p[1], p[2], p[3], memo, a); if (m === false) return;   // conversa protegida e sem passe: não responde (o aparelho pede de novo depois da senha)
+      var url = m ? lerArquivoImagem(m.img.m) : '';
       r[k] = url || 'x';   // 'x' = não existe ou não é para esta pessoa (o aparelho não pede de novo)
     });
     return r;
@@ -2318,6 +2348,8 @@ var Core = (function () {
   /* ---------- despachante ---------- */
   function chamar(nome, args) {
     if (!api.hasOwnProperty(nome)) return { erro: 'Função desconhecida.' };
+    // campos que começam com "_" são marcas internas do servidor (ex.: _liberado, depois de conferida a senha): nunca valem vindos do aparelho
+    if (args && typeof args === 'object') Object.keys(args).forEach(function (k) { if (k.charAt(0) === '_') delete args[k]; });
     try {
       var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|imagem|statusAvisos)$/.test(nome);
       var r = escrita && P.travar ? P.travar(function () { return api[nome](args || {}); }) : api[nome](args || {});
@@ -2700,7 +2732,7 @@ function srcFoto(f){ if(!f) return ''; if(!ehRef(f)) return f; if(FOTOS[f]) retu
 function imgAttrs(f){ return 'src="'+esc(srcFoto(f))+'"'+(ehRef(f) && !FOTOS[f]? ' data-fref="'+esc(f)+'"' : ''); }
 /* guarda no aparelho: fotos de perfil sempre; miniaturas das mensagens só as mais recentes (as antigas saem para caber) */
 function guardarFotos(){
-  var o={}, tam=2, k; for(k in FOTOS) if(FOTOS[k]!=='x'){ o[k]=FOTOS[k]; tam+=k.length+FOTOS[k].length+6; }
+  var o={}, tam=2, k; for(k in FOTOS) if(FOTOS[k]!=='x' && !(ehMini(k) && CONVS_PROT[k.split('.')[2]])){ o[k]=FOTOS[k]; tam+=k.length+FOTOS[k].length+6; }
   var ms=Object.keys(o).filter(ehMini);
   while(tam>2000000 && ms.length){ k=ms.shift(); tam-=k.length+o[k].length+6; delete o[k]; }
   if(tam<2500000) lsSet('flecha-fotos', JSON.stringify(o));
@@ -2826,11 +2858,17 @@ function moeda(v){ v=String(v||'').trim(); if(!v) return 'a definir'; return 'R$
 
 /* ---------- chamada ao servidor ---------- */
 var S = { token:null, eu:null, gid:null, g:null, aba:'amigo', conv:null };
+/* Passes das conversas protegidas pela senha ("Meu amigo secreto"): ficam SÓ na memória, nunca guardados no aparelho.
+   Somem ao sair da conta, ao fechar o app e quando ele fica mais de 2 minutos fora da tela. */
+var PASSES={}, CONVS_PROT={}, convProtAberta=null, convCont=null;
+function ehProtegida(e){ return !!e && /protegida pela sua senha/.test(e.message||''); }
 function chamar(nome, args){
   args = args || {}; if(S.token && !args.token) args.token = S.token;
+  if(args.conversaId && PASSES[args.conversaId] && !args.passe) args.passe=PASSES[args.conversaId];
+  if(nome==='fotos') args.passes=PASSES;
   if(window.__TESTE_FALHA__===nome) return Promise.reject(new Error('Falha de conexão. Tente novamente.'));   // só para os testes automáticos
   return new Promise(function(res, rej){
-    function trata(r){ if(typeof r==='string') r=JSON.parse(r); if(r.erro){ if(/sessão expirou/.test(r.erro)){ sair(true); } rej(new Error(r.erro)); } else res(r.ok); }
+    function trata(r){ if(typeof r==='string') r=JSON.parse(r); if(r.erro){ if(/sessão expirou/.test(r.erro)){ sair(true); } rej(new Error(r.erro)); } else{ if(nome==='revelarAmigo' && r.ok && r.ok.passe) PASSES[r.ok.passe.conversaId]=r.ok.passe.passe; res(r.ok); } }
     if(GAS){ google.script.run.withSuccessHandler(trata).withFailureHandler(function(e){ rej(new Error('Falha de conexão. Tente novamente.')); }).api(nome, args); }
     else if(MODO_DEMO){ setTimeout(function(){ try{ trata(Core.chamar(nome, JSON.parse(JSON.stringify(args)))); }catch(e){ rej(e); } }, 90); }
     else rej(new Error('Servidor indisponível.'));
@@ -3036,6 +3074,7 @@ function telaPedidoGrupo(){
 function pedirSaida(){ confirmar('Sair da conta?', 'Para entrar de novo, você vai precisar do seu e-mail e da sua senha.', 'Sair').then(function(ok){ if(ok) sair(false); }); }
 function entrou(r){ S.token=r.token; lsSet('flecha-token', r.token); return iniciar(); }
 function sair(silencioso){
+  PASSES={}; convProtAberta=null;
   var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); falarPortal({flecha:'push-sair'}); pushLigado=''; limparCache(); lsSet('flecha-cache', null); esquecerMinis();
   if(t && !silencioso) chamar('sair',{token:t}).catch(function(){});
   telaLogin(silencioso? 'Sua sessão expirou. Entre novamente.' : '');
@@ -3328,6 +3367,22 @@ function abaAmigo(c, fresco){
 var tEsconder=null;
 function esconderAmigo(){ clearTimeout(tEsconder); var r=$('#bil-r'), c=$('#bil-c'); if(r){ r.hidden=true; r.innerHTML=''; } if(c) c.hidden=false; }
 document.addEventListener('visibilitychange', function(){ if(document.hidden) esconderAmigo(); });
+/* Conversa protegida: se o app ficou mais de 2 minutos fora da tela, os passes são esquecidos e a conversa aberta se fecha
+   (2 minutos de folga para escolher ou tirar uma foto sem perder a conversa). */
+var ocultoEm=0;
+function trancarConversas(){
+  PASSES={};
+  if(convProtAberta && S.conv===convProtAberta && $('#chat') && convCont){
+    $$('.modal-fundo').forEach(function(m){ if(m.parentNode) m.parentNode.removeChild(m); });   // foto ampliada ou ações da mensagem
+    for(var k in IMG_CHEIA) if(k.indexOf(convProtAberta+'.')===0) delete IMG_CHEIA[k];
+    S.conv=null; pararAtualizacao(); convProtAberta=null; abaConversas(convCont);
+  }
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden){ ocultoEm=Date.now(); return; }
+  if(ocultoEm && Date.now()-ocultoEm > (window.__TESTE_TRANCA_MS__||120000)) trancarConversas();
+  ocultoEm=0;
+});
 function revelarAmigo(a){
   var r=$('#bil-r'); if(!r) return;
   r.innerHTML='<div class="rotulo">Você tirou</div><div class="revelado" style="margin-top:10px">'+avatar(a.foto,a.nome,'g')+'<div><div class="nome-amigo">'+esc(a.nome)+'</div><button class="link" id="bil-esc" style="color:var(--palha)">Esconder</button></div></div>'+
@@ -3466,7 +3521,7 @@ function abaConversas(c){
     h+= cs.length? '<div class="lista">'+cs.map(function(k){
       var av = k.foto? '<img class="av" '+imgAttrs(k.foto)+' alt="">' : (k.icone==='presente'||k.icone==='mascara'||k.icone==='alvo')? avatarIcone(k.icone) : avatar('',k.titulo);
       var esp = k.tipo==='amigo'? (k.ordem===0?' conv-meu':' conv-tirou') : '';   // as duas conversas especiais ganham destaque
-      return '<button class="item'+esp+'" data-c="'+esc(k.id)+'">'+av+'<div class="txt"><div class="t1">'+esc(k.titulo)+'</div><div class="t2">'+(k.ultima? (k.ultima.minha?'Você: ':'')+esc(k.ultima.texto) : esc(k.subtitulo))+'</div></div>'+(k.ultima?'<span class="hora">'+quando(k.ultima.em)+'</span>':'')+(naoLida(k)?'<span class="ponto" aria-label="não lida"></span>':'')+'</button>';
+      return '<button class="item'+esp+'" data-c="'+esc(k.id)+'">'+av+'<div class="txt"><div class="t1">'+esc(k.titulo)+'</div><div class="t2">'+(k.protegida? '🔒 Protegida pela sua senha' : k.ultima? (k.ultima.minha?'Você: ':'')+esc(k.ultima.texto) : esc(k.subtitulo))+'</div></div>'+(k.ultima?'<span class="hora">'+quando(k.ultima.em)+'</span>':'')+(naoLida(k)?'<span class="ponto" aria-label="não lida"></span>':'')+'</button>';
     }).join('')+'</div>' : '<div class="cartao muted">Nenhuma conversa ainda. Toque em “Nova mensagem” para escrever para alguém, de forma aberta ou anônima.</div>';
     h+='</div>';
     c.innerHTML=h;
@@ -3556,6 +3611,7 @@ function abrirConversa(c, id){
   }
   function desenhar(d, primeira, rolar){
     ultimo=d;
+    if(d.protegida){ CONVS_PROT[id]=1; convProtAberta=id; if(d.passe) PASSES[id]=d.passe; }
     var chat=$('#chat');
     if(!chat){
       c.innerHTML='<div class="cab-conversa"><button class="btn sec peq" id="cv-volta" aria-label="Voltar">'+I.voltar+'</button>'+avatarIcone(d.icone==='alvo'?'alvo':d.icone)+'<div style="min-width:0"><div style="font-weight:700">'+esc(d.titulo)+'</div><div class="muted" style="font-size:13px">'+esc(d.subtitulo)+'</div></div></div>'+
@@ -3582,10 +3638,22 @@ function abrirConversa(c, id){
     if(d.itens.length) marcarVisto(id, d.itens[d.itens.length-1].em);
     if(embaixo) window.scrollTo(0, document.body.scrollHeight);
   }
-  c.innerHTML=carregando();
-  chamar('mensagens',{grupoId:S.gid, conversaId:id}).then(function(d){ desenhar(d, true);
-    pararAtualizacao(); tAtualiza=setInterval(function(){ if(document.hidden || !$('#chat')) return; chamar('mensagens',{grupoId:S.gid, conversaId:id}).then(function(d2){ if($('#chat')) desenhar(d2); }).catch(function(){}); }, GAS?15000:4000);
-  }).catch(function(e){ S.conv=null; falha(e); abaConversas(c); });
+  convCont=c; convProtAberta=null;
+  function voltar(){ S.conv=null; pararAtualizacao(); convProtAberta=null; abaConversas(c); }
+  (function carregar(){
+    c.innerHTML=carregando();
+    chamar('mensagens',{grupoId:S.gid, conversaId:id}).then(function(d){ if(S.conv!==id) return; desenhar(d, true);
+      pararAtualizacao(); tAtualiza=setInterval(function(){ if(document.hidden || !$('#chat')) return; chamar('mensagens',{grupoId:S.gid, conversaId:id}).then(function(d2){ if($('#chat') && S.conv===id) desenhar(d2); })
+        .catch(function(e){ if(ehProtegida(e) && S.conv===id){ delete PASSES[id]; voltar(); } }); }, GAS?15000:4000);   // o passe venceu: a conversa se fecha
+    }).catch(function(e){
+      if(!ehProtegida(e)){ S.conv=null; falha(e); return abaConversas(c); }
+      // conversa com o amigo secreto, proteção ligada: só abre com a senha (o servidor não mandou nenhuma mensagem)
+      delete PASSES[id]; CONVS_PROT[id]=1;
+      pedirSenhaAmigo('Esta conversa pode revelar quem é o seu amigo secreto. Para abrir, digite a senha que você usa para entrar no Flecha Secreta.', function(senha){
+        return chamar('liberarConversa',{grupoId:S.gid, conversaId:id, senha:senha});
+      }).then(function(r){ if(S.conv!==id) return; if(r && r.passe){ PASSES[id]=r.passe; carregar(); } else voltar(); });
+    });
+  })();
 }
 
 /* ---------- aba: mural ---------- */
@@ -3846,7 +3914,7 @@ function telaPerfil(c){
         '<div class="muted" style="font-size:12.5px">Só você vê '+(opE&&opA?'estas opções':'esta opção')+'. Ninguém fica sabendo quem marcou, e vale para os próximos pedidos.</div></div></div>'; })()+
     '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
     '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
-    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou só aparece depois da senha que você usa para entrar no app. Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
+    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou e a conversa <b>Meu amigo secreto</b> só aparecem depois da senha que você usa para entrar no app (a lista de conversas e os avisos também não mostram o que ele escreveu). Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
     '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s">'+campoUsuario(S.eu.email)+'<label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><div class="grade2"><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label><label class="campo">Repita a nova senha<input class="inp" type="password" id="pf-n2" autocomplete="new-password"></label></div><div class="faixa erro" id="pf-se" hidden></div><button class="btn sec">Trocar senha</button></form></div>'+
     '<div class="secao"><button class="btn sec larga" id="pf-sair">Sair desta conta</button><div class="muted" style="font-size:12.5px;text-align:center">Flecha Secreta · o amigo secreto da sua turma</div></div>';
   $('#pf-foto').onchange=function(){ var f=this.files[0]; lerImagem(f, 320, true).then(function(url){ foto=url; $('#pf-av').innerHTML=avatar(url,eu.nome,'g'); aviso('Foto pronta. Toque em Salvar perfil.'); }).catch(falha); };
