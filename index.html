@@ -47,6 +47,12 @@
   #abertura .ajuda { font-size: 13px; opacity: .85; max-width: 32ch; }
   #abertura a { color: #e2b65e; }
   .some { opacity: 0; pointer-events: none; }
+  /* faixa para abrir um link quando o celular bloqueia a abertura automática */
+  #link { position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); z-index: 8; display: flex; gap: 10px; align-items: center;
+    background: #21402f; color: #f3ead2; border-radius: 14px; padding: 12px 8px 12px 16px; box-shadow: 0 8px 28px rgba(0,0,0,.35);
+    font: 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #link a { color: #ffd98a; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 0; }
+  #link button { border: 0; background: none; color: #f3ead2; font-size: 22px; line-height: 1; padding: 6px 10px; cursor: pointer; }
   /* pedido de permissão das notificações (o iPhone exige um toque na própria página de entrada) */
   #push { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; padding: 20px; background: rgba(10, 20, 14, .55);
     font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; transition: opacity .25s; }
@@ -95,7 +101,7 @@ window.addEventListener('message', function (ev) {
   if (!doGoogle(ev.origin) || !ev.data || !ev.data.flecha) return;
   if (ev.data.flecha === 'pedir') {
     appFonte = ev.source; appOrigem = ev.origin;
-    ev.source.postMessage({ flecha: 'dados', dados: lerTudo(), margens: margens() }, ev.origin);
+    ev.source.postMessage({ flecha: 'dados', dados: lerTudo(), margens: margens(), links: true }, ev.origin);
     esconderAbertura();
   } else if (ev.data.flecha === 'base') {
     var capa = ev.data.modo === 'capa';
@@ -106,6 +112,8 @@ window.addEventListener('message', function (ev) {
     [120, 380, 700].forEach(function (ms) { setTimeout(function () { informarVisivel(fonte, origem); }, ms); });
   } else if (ev.data.flecha === 'teclado') {
     voltarDepois(450);
+  } else if (ev.data.flecha === 'abrir-link') {
+    abrirLink(ev.data.url);
   } else if (/^push-/.test(ev.data.flecha)) {
     tratarPush(ev.data, ev.source, ev.origin);
   } else if (ev.data.flecha === 'salvar' && typeof ev.data.chave === 'string' && /^flecha-/.test(ev.data.chave)) {
@@ -118,6 +126,36 @@ window.addEventListener('message', function (ev) {
     gravar(d);
   }
 });
+
+/* Links escritos nas mensagens: o app pede e ESTA página abre o endereço, em nova aba / no navegador, sem tirar o app do lugar.
+   Só http e https. Se o celular bloquear a abertura automática, aparece uma faixa com o link para tocar. */
+function enderecoSeguro(u) {
+  if (typeof u !== 'string' || !u || u.length > 2000 || /[\s<>"'`\\]/.test(u)) return '';
+  try { var o = new URL(u); return (o.protocol === 'http:' || o.protocol === 'https:') && o.hostname && !o.username && !o.password ? o.href : ''; } catch (e) { return ''; }
+}
+function fecharFaixaLink() { var f = document.getElementById('link'); if (f) f.remove(); }
+function faixaLink(url) {
+  fecharFaixaLink();
+  var f = document.createElement('div'); f.id = 'link';
+  var t = document.createElement('span'); t.textContent = 'Abrir no navegador:';
+  var a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  var dom = ''; try { dom = new URL(url).hostname.replace(/^www\./i, ''); } catch (e) {}
+  a.textContent = dom || 'abrir link'; a.onclick = function () { setTimeout(fecharFaixaLink, 300); };
+  var x = document.createElement('button'); x.type = 'button'; x.setAttribute('aria-label', 'Fechar'); x.textContent = '×'; x.onclick = fecharFaixaLink;
+  f.appendChild(t); f.appendChild(a); f.appendChild(x); document.body.appendChild(f);
+  setTimeout(function () { if (f.parentNode) f.remove(); }, 12000);
+}
+function abrirLink(u) {
+  var url = enderecoSeguro(u); if (!url) return false;
+  var w = null; try { w = window.open(url, '_blank'); } catch (e) {}
+  if (w) { try { w.opener = null; } catch (e) {} return true; }
+  // não abriu sozinho (bloqueio de janelas): oferece o link num toque direto nesta página, que o celular sempre aceita
+  faixaLink(url);
+  // se o endereço abriu mesmo assim (o app saiu da frente), a faixa não é mais necessária
+  var some = function () { if (document.hidden) fecharFaixaLink(); };
+  document.addEventListener('visibilitychange', some); setTimeout(function () { document.removeEventListener('visibilitychange', some); }, 12000);
+  return false;
+}
 
 /* iPhone: depois que o teclado FECHA, a página às vezes fica "deslocada" e o toque cai fora do botão.
    Recoloca no lugar só com o teclado fechado: enquanto ele está aberto, o iPhone precisa deslizar a tela

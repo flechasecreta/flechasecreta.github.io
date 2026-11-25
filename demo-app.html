@@ -180,6 +180,10 @@ main{padding-bottom:calc(90px + var(--sab))}
 .bolha.minha{align-self:flex-end;background:var(--mata-2);color:var(--sobre-mata);border-color:transparent;border-bottom-right-radius:5px}
 .bolha:not(.minha){border-bottom-left-radius:5px}
 .bolha .meta{font-size:11px;opacity:.7;margin-top:3px}
+/* links nas mensagens: discretos, legíveis no balão claro e no escuro, quebrando quando o endereço é longo */
+a.lk{color:inherit;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:2px;text-decoration-color:color-mix(in srgb,currentColor 55%,transparent);overflow-wrap:anywhere;word-break:break-word;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:color-mix(in srgb,var(--palha) 35%,transparent)}
+.bolha:not(.minha) a.lk,.post .texto a.lk,.acoes-msg .previa a.lk{color:color-mix(in srgb,var(--ok) 72%,var(--tinta))}
+a.lk:focus-visible{outline:2px solid var(--palha);outline-offset:2px;border-radius:4px}
 .compor{position:sticky;bottom:calc(64px + var(--sab));background:var(--fundo);padding:10px 0;display:flex;gap:8px;align-items:flex-end}
 .senha-wrap{position:relative;display:block}
 .senha-wrap .inp{padding-right:48px}
@@ -197,6 +201,26 @@ main{padding-bottom:calc(90px + var(--sab))}
 .dica-chat{font-size:12.5px;color:var(--tinta-2);text-align:center;margin-top:6px}
 .acoes-msg{display:grid;gap:8px}
 .acoes-msg .previa{background:var(--suave);border-radius:12px;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;max-height:30vh;overflow:auto}
+/* fotos nas mensagens: miniatura no balão, prévia antes de enviar e foto ampliada */
+.msg-img{display:block;border:0;padding:0;margin:0 0 6px;background:var(--suave);border-radius:10px;overflow:hidden;cursor:zoom-in;width:min(240px,100%);max-height:320px;color:var(--tinta-2);font-size:12.5px}
+.msg-img img{display:block;width:100%;height:100%;object-fit:cover}
+.msg-img.sumiu{cursor:default;display:grid;place-items:center;aspect-ratio:auto!important;padding:14px 10px;width:auto}
+.bolha.minha .msg-img{background:color-mix(in srgb,#000 22%,transparent);color:var(--sobre-mata)}
+.post .msg-img{margin:8px 0 0}
+.compor-linha{display:flex;gap:8px;align-items:flex-end}
+.compor-linha .compor{flex:1;min-width:0}
+.btn.anexar{padding:0;width:46px;min-height:46px;flex:none}
+#mu-foto{order:-1}   /* aparece antes de Publicar, mas Publicar continua sendo o primeiro botão do formulário */
+.compor-linha .btn.anexar{margin-bottom:10px}   /* alinha com o campo (o formulário tem 10px de folga embaixo) */
+.btn.anexar svg{width:22px;height:22px}
+.anexo{display:flex;gap:10px;align-items:center;background:var(--suave);border-radius:12px;padding:8px 10px;font-size:13.5px}
+.compor-wrap .anexo{margin-bottom:2px}
+.anexo img{width:56px;height:56px;border-radius:8px;object-fit:cover;flex:none;background:var(--cartao)}
+.anexo .txt{flex:1;min-width:0}
+.anexo .alerta-anon{color:var(--aviso);font-weight:600;font-size:12.5px;margin-top:2px}
+.anexo .link{padding:6px 8px;font-size:16px;color:var(--tinta-2)}
+.foto-msg{display:grid;justify-items:center;gap:8px}
+.foto-msg img{max-width:100%;max-height:68vh;width:auto;height:auto;object-fit:contain;border-radius:12px;background:var(--suave)}
 /* foto ampliada */
 .av-zoom{border:0;padding:0;background:none;cursor:zoom-in;border-radius:50%;flex:none}
 .foto-grande{display:grid;justify-items:center;gap:12px}
@@ -502,6 +526,45 @@ var Cripto = (function () {
     }
     return JSON.parse(deUtf8(out));
   }
+  /* Cifra de ARQUIVOS (imagens das mensagens): ChaCha20 (RFC 8439) + autenticação HMAC-SHA256.
+     É rápida mesmo em JavaScript puro, o que o fluxo HMAC acima não é para centenas de KB.
+     Formato: [2][nonce 12][etiqueta 16][conteúdo cifrado]. Quem abrir o arquivo no Drive vê só bytes sem sentido. */
+  function chacha20(chaveBytes, nonce, dados, contador) {
+    function le(b, i) { return (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) | 0; }
+    var e = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574], i, n = dados.length, out = new Array(n), x = new Array(16);
+    for (i = 0; i < 8; i++) e.push(le(chaveBytes, 4 * i));
+    e.push(contador | 0, le(nonce, 0), le(nonce, 4), le(nonce, 8));
+    function qr(a, b, c, d) {
+      x[a] = (x[a] + x[b]) | 0; x[d] ^= x[a]; x[d] = (x[d] << 16) | (x[d] >>> 16);
+      x[c] = (x[c] + x[d]) | 0; x[b] ^= x[c]; x[b] = (x[b] << 12) | (x[b] >>> 20);
+      x[a] = (x[a] + x[b]) | 0; x[d] ^= x[a]; x[d] = (x[d] << 8) | (x[d] >>> 24);
+      x[c] = (x[c] + x[d]) | 0; x[b] ^= x[c]; x[b] = (x[b] << 7) | (x[b] >>> 25);
+    }
+    for (var pos = 0; pos < n; pos += 64) {
+      for (i = 0; i < 16; i++) x[i] = e[i];
+      for (i = 0; i < 10; i++) { qr(0, 4, 8, 12); qr(1, 5, 9, 13); qr(2, 6, 10, 14); qr(3, 7, 11, 15); qr(0, 5, 10, 15); qr(1, 6, 11, 12); qr(2, 7, 8, 13); qr(3, 4, 9, 14); }
+      for (i = 0; i < 16; i++) {
+        var w = (x[i] + e[i]) | 0, p = pos + 4 * i;
+        if (p < n) out[p] = (dados[p] ^ w) & 255;
+        if (p + 1 < n) out[p + 1] = (dados[p + 1] ^ (w >>> 8)) & 255;
+        if (p + 2 < n) out[p + 2] = (dados[p + 2] ^ (w >>> 16)) & 255;
+        if (p + 3 < n) out[p + 3] = (dados[p + 3] ^ (w >>> 24)) & 255;
+      }
+      e[12] = (e[12] + 1) | 0;
+    }
+    return out;
+  }
+  function cifrarBytes(bytes) {
+    var nonce = P.bytesAleatorios(12), ct = chacha20(subchave('arquivo'), nonce, bytes, 1);
+    var tag = hmac(subchave('arquivo-mac'), [2].concat(nonce).concat(ct)).slice(0, 16);
+    return [2].concat(nonce).concat(tag).concat(ct);
+  }
+  function decifrarBytes(tudo) {
+    if (!tudo || tudo.length < 29 || tudo[0] !== 2) return null;
+    var nonce = tudo.slice(1, 13), tag = tudo.slice(13, 29), ct = tudo.slice(29);
+    if (hex(hmac(subchave('arquivo-mac'), [2].concat(nonce).concat(ct)).slice(0, 16)) !== hex(tag)) return null;
+    return chacha20(subchave('arquivo'), nonce, ct, 1);
+  }
   function hashSenha(senha, saltHex) {
     var salt = deHex(saltHex), h = hmac(salt, utf8(senha));
     for (var i = 0; i < 300; i++) h = hmac(salt, h.concat(utf8(senha)));
@@ -516,7 +579,7 @@ var Cripto = (function () {
   }
   function idPush(email) { return 'fs' + hex(hmac(subchave('push'), utf8(String(email).toLowerCase()))).substr(0, 30); }
   return { idPush: idPush, utf8: utf8, sha256: sha256, hmac: hmac, hmacJs: hmacJs, hex: hex, deHex: deHex, b64: b64, deB64: deB64,
-    cifrar: cifrar, decifrar: decifrar, hashSenha: hashSenha, token: token, hashToken: hashToken, inteiroAleatorio: inteiroAleatorio };
+    cifrar: cifrar, decifrar: decifrar, chacha20: chacha20, cifrarBytes: cifrarBytes, decifrarBytes: decifrarBytes, hashSenha: hashSenha, token: token, hashToken: hashToken, inteiroAleatorio: inteiroAleatorio };
 })();
 
 /* ---------------------------------------------------------------------
@@ -1244,6 +1307,101 @@ var Core = (function () {
     return c.aAnon ? { titulo: 'Remetente anônimo', subtitulo: 'Alguém do grupo escreveu para você', icone: 'mascara', fotoDe: null }
       : { titulo: nomeDe(c.a), subtitulo: 'Conversa aberta', icone: 'balao', fotoDe: c.a };
   }
+  /* ---------- imagens nas conversas e no mural ----------
+     A imagem chega do aparelho já reduzida e recomprimida em JPEG (o que tira EXIF/GPS). O servidor confere de novo:
+     só aceita JPEG, percorre a estrutura do arquivo e JOGA FORA qualquer bloco de metadados (EXIF, XMP, comentários,
+     miniatura embutida e tudo o que vier depois do fim da imagem). Depois cifra e guarda fora da planilha (P.imgGuardar);
+     dentro da mensagem cifrada fica só a referência. Nada no arquivo guardado diz quem enviou nem de que conversa é. */
+  var IMG_MAX = 620000, MINI_MAX = 90000, IMG_LADO_MAX = 2600, IMG_POR_MINUTO = 5;   // tamanhos em caracteres de base64
+  function limparJpeg(b) {
+    var n = b.length, i = 2, partes = [[0xFF, 0xD8]], l = 0, a = 0, temQuadro = false, temVarredura = false;
+    if (n < 100 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+    for (var voltas = 0; voltas < 4000; voltas++) {
+      if (i + 1 >= n || b[i] !== 0xFF) return null;
+      while (i + 1 < n && b[i + 1] === 0xFF) i++;            // bytes de preenchimento
+      var m = b[i + 1];
+      if (m === 0xD9) { if (!temQuadro || !temVarredura) return null; partes.push([0xFF, 0xD9]); return { bytes: Array.prototype.concat.apply([], partes), l: l, a: a }; }
+      if (m === 0x00 || m === 0x01 || (m >= 0xD0 && m <= 0xD8)) return null;   // não podem aparecer soltos aqui
+      if (i + 3 >= n) return null;
+      var tam = (b[i + 2] << 8) | b[i + 3], fim = i + 2 + tam;
+      if (tam < 2 || fim > n) return null;
+      var quadro = m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC;
+      // ficam só os blocos necessários para mostrar a imagem; APP0 só sem miniatura embutida; perfil de cor (APP2 "ICC_PROFILE") e APP14 "Adobe"
+      var fica = quadro || m === 0xC4 || m === 0xCC || m === 0xDB || m === 0xDD || m === 0xDA || (m === 0xE0 && tam === 16) ||
+        (m === 0xE2 && tam > 16 && String.fromCharCode.apply(null, b.slice(i + 4, i + 15)) === 'ICC_PROFILE') ||
+        (m === 0xEE && tam >= 14 && String.fromCharCode.apply(null, b.slice(i + 4, i + 9)) === 'Adobe');
+      if (quadro) { if (temQuadro || tam < 8) return null; temQuadro = true; a = (b[i + 5] << 8) | b[i + 6]; l = (b[i + 7] << 8) | b[i + 8]; }
+      if (m === 0xDA) {
+        if (!temQuadro) return null;
+        temVarredura = true;
+        // dados comprimidos: vão até o próximo marcador de verdade (FF seguido de algo que não seja 00 nem reinício D0–D7)
+        var j = fim;
+        while (j + 1 < n && !(b[j] === 0xFF && b[j + 1] !== 0x00 && !(b[j + 1] >= 0xD0 && b[j + 1] <= 0xD7))) j++;
+        if (j + 1 >= n) return null;
+        partes.push(b.slice(i, j)); i = j; continue;
+      }
+      if (fica) partes.push(b.slice(i, fim));
+      i = fim;
+    }
+    return null;
+  }
+  function lerImagemEnviada(v, max) {
+    var m = /^data:image\/jpeg;base64,([A-Za-z0-9+\/]+={0,2})$/.exec(String(v || ''));
+    if (!m) erro('Só é possível enviar fotos e imagens. Tente escolher a imagem de novo.');
+    if (m[1].length > max) erro('A imagem ficou grande demais para enviar. Tente outra foto.');
+    var j = limparJpeg(Cripto.deB64(m[1]));
+    if (!j || !j.l || !j.a || j.l > IMG_LADO_MAX || j.a > IMG_LADO_MAX) erro('Não consegui ler esta imagem. Tente outra foto.');
+    return j;
+  }
+  /* confere a imagem ANTES de qualquer gravação; devolve null quando a mensagem não tem imagem */
+  function conferirImagem(u, a) {
+    if (!a.imagem) return null;
+    if (!P.imgGuardar) erro('O envio de fotos ainda não está disponível.');
+    var img = { g: lerImagemEnviada(a.imagem, IMG_MAX), m: lerImagemEnviada(a.miniatura, MINI_MAX) }, livre = false;
+    for (var i = 0; i < IMG_POR_MINUTO && !livre; i++) livre = primeiraVez('img:' + u.email + ':' + i, 60);
+    if (!livre) erro('Você enviou muitas fotos em pouco tempo. Espere um minuto e tente de novo.');
+    return img;
+  }
+  function guardarImagem(img) {
+    if (!img) return null;
+    var f = '', m = '';
+    try { f = P.imgGuardar(Cripto.cifrarBytes(img.g.bytes)); m = P.imgGuardar(Cripto.cifrarBytes(img.m.bytes)); } catch (e) { }
+    if (!f || !m) { if (f) try { P.imgApagar(f); } catch (e) { } erro('Não foi possível guardar a foto agora. Tente de novo em instantes.'); }
+    return { f: f, m: m, l: img.g.l, a: img.g.a };
+  }
+  function apagarImagem(d) { if (d && d.img && P.imgApagar) [d.img.f, d.img.m].forEach(function (r) { if (r) try { P.imgApagar(r); } catch (e) { } }); }
+  /* toda remoção de mensagens passa por aqui: apagar a mensagem apaga também a imagem guardada */
+  function removerMensagens(pred) {
+    T('Mensagens').all().filter(pred).forEach(function (r) { var d = null; try { d = Cripto.decifrar(r.dados); } catch (e) { } apagarImagem(d); });
+    T('Mensagens').remove(pred);
+  }
+  function refMini(gid, cid, id) { return 'f:m.' + gid + '.' + cid + '.' + id; }
+  function imgPublica(gid, cid, m) { return m.img ? { mini: refMini(gid, cid, m.id), l: m.img.l, a: m.img.a } : null; }
+  function textoCurto(m, n) { var t = resumo(m.texto, n); return m.img ? '📷 ' + (t || 'Foto') : t; }
+  function lerArquivoImagem(ref) {
+    if (!ref || !P.imgLer) return '';
+    var bytes = null; try { bytes = Cripto.decifrarBytes(P.imgLer(ref)); } catch (e) { }
+    return bytes ? 'data:image/jpeg;base64,' + Cripto.b64(bytes) : '';
+  }
+  /* mensagem com imagem que ESTA pessoa pode ver (mesmas regras das mensagens); senão, null */
+  function mensagemComImagem(u, gid, cid, id, memo) {
+    try {
+      var chave = gid + '|' + cid, todas = memo && memo[chave];
+      if (!todas) {   // a conferência de acesso é feita uma vez por conversa em cada chamada (memo vale só para esta pessoa, nesta chamada)
+        var x = exigirMembro(u, gid); exigirParticipante(x);
+        if (cid !== 'MURAL') exigirConversa(u, x.g.id, cid);
+        todas = mensagensDe(x.g.id, cid); if (memo) memo[chave] = todas;
+      }
+      var m = todas.filter(function (k) { return k.id === id; })[0];
+      return m && m.img ? m : null;
+    } catch (e) { return null; }
+  }
+  api.imagem = function (a) {
+    var u = sessao(a.token), m = mensagemComImagem(u, a.grupoId, a.conversaId || 'MURAL', a.id);
+    var url = m ? lerArquivoImagem(m.img.f) : '';
+    if (!url) erro('Esta foto não está mais disponível.');
+    return { url: url };
+  };
   function ultimaMensagem(gid, cid) {
     var linhas = T('Mensagens').all().filter(function (m) { return m.grupoId === gid && m.conversaId === cid; });
     if (!linhas.length) return null;
@@ -1257,7 +1415,7 @@ var Core = (function () {
       var ds = descreverConversa(c, u.email, true), ult = ultimaMensagem(x.g.id, c.id);
       var fu = ds.fotoDe ? usuario(ds.fotoDe) : null;
       return { id: c.id, tipo: c.tipo, titulo: ds.titulo, subtitulo: ds.subtitulo, icone: ds.icone, foto: fu ? fu.foto : '',
-        ultima: ult ? { texto: String(ult.texto).substr(0, 80), em: ult.em, minha: ult.lado === (c.a === u.email ? 'a' : 'b') } : null, ordem: c.tipo === 'amigo' ? (c.a === u.email ? 0 : 1) : 2 };
+        ultima: ult ? { texto: textoCurto(ult, 80), em: ult.em, minha: ult.lado === (c.a === u.email ? 'a' : 'b') } : null, ordem: c.tipo === 'amigo' ? (c.a === u.email ? 0 : 1) : 2 };
     }).sort(function (p, q) { if (p.ordem !== q.ordem) return p.ordem - q.ordem; return ((q.ultima && q.ultima.em) || '') < ((p.ultima && p.ultima.em) || '') ? -1 : 1; });
   };
   function exigirConversa(u, gid, cid) {
@@ -1277,17 +1435,19 @@ var Core = (function () {
     todas.forEach(function (m) { porId[m.id] = m; if (m.resp) resp[m.resp] = 1; });
     function autor(m) { return m.lado === lado ? 'Você' : nomeOutro; }
     return { titulo: ds.titulo, subtitulo: ds.subtitulo, icone: ds.icone, outroPendente: !!(mo && !mo.confirmado), nomeOutro: mo ? nomeDe(ds.fotoDe) : '',
+      souAnonimo: lado === 'a' && (c.tipo === 'amigo' || !!c.aAnon),   // quem está deste lado escreve sem se identificar (lembrete ao anexar foto)
       itens: todas.map(function (m) {
         var o = m.resp ? porId[m.resp] : null, minha = m.lado === lado;
-        return { id: m.id, minha: minha, autor: autor(m), texto: m.texto, em: m.em, editado: m.editado || '', podeEditar: minha && dentroDoPrazo(m.em), respondida: !!resp[m.id],
-          resposta: m.resp ? (o ? { id: o.id, autor: autor(o), texto: resumo(o.texto, 160) } : { apagada: true }) : null };
+        return { id: m.id, minha: minha, autor: autor(m), texto: m.texto, img: imgPublica(x.g.id, c.id, m), em: m.em, editado: m.editado || '', podeEditar: minha && dentroDoPrazo(m.em), respondida: !!resp[m.id],
+          resposta: m.resp ? (o ? { id: o.id, autor: autor(o), texto: textoCurto(o, 160) } : { apagada: true }) : null };
       }) };
   };
   api.enviarMensagem = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), c = exigirConversa(u, x.g.id, a.conversaId);
-    var t = String(a.texto || '').trim(); if (!t) erro('Escreva uma mensagem.');
+    var t = String(a.texto || '').trim(); if (!t && !a.imagem) erro('Escreva uma mensagem.');
     var dados = { lado: c.a === u.email ? 'a' : 'b', texto: t.substr(0, 2000) };
     if (a.respostaA) { if (!mensagensDe(x.g.id, c.id).some(function (m) { return m.id === a.respostaA; })) erro('A mensagem que você quer responder foi apagada.'); dados.resp = a.respostaA; }
+    var img = guardarImagem(conferirImagem(u, a)); if (img) dados.img = img;
     T('Mensagens').insert({ id: Cripto.token().substr(0, 16), grupoId: x.g.id, conversaId: c.id, dados: Cripto.cifrar(dados), em: agora() });
     // aviso a quem recebeu: nunca revela o amigo secreto nem remetente anônimo; mostra o começo do texto, salvo se a pessoa desligou a prévia no Perfil
     var souA = c.a === u.email, dest = souA ? c.b : c.a, titulo;
@@ -1295,10 +1455,12 @@ var Core = (function () {
     else titulo = (souA && c.aAnon) ? 'Você recebeu uma mensagem anônima 🤫' : nomeDe(u.email) + ' te mandou uma mensagem';
     if (primeiraVez('msg:' + c.id + ':' + dest, 60)) {
       var ud = usuario(dest), previa = !(ud && ud.semPrevia === 'sim');
-      avisar(dest, titulo, previa ? '"' + resumo(t, 100) + '"' : 'Abra o Flecha Secreta, na aba Conversas, para ler.', { ir: 'conversas', g: x.g.id, c: c.id });
+      // mensagem só com imagem: a prévia diz "📷 Foto" (a imagem em si nunca vai na notificação)
+      avisar(dest, titulo, previa ? previaAviso(t, !!img, 100) : 'Abra o Flecha Secreta, na aba Conversas, para ' + (img && !t ? 'ver.' : 'ler.'), { ir: 'conversas', g: x.g.id, c: c.id });
     }
     return api.mensagens(a);
   };
+  function previaAviso(t, temImagem, n) { return temImagem ? '📷 ' + (t ? '"' + resumo(t, n) + '"' : 'Foto') : '"' + resumo(t, n) + '"'; }
   /* Editar (até 10 minutos depois) e apagar as próprias mensagens: conversas e mural */
   function minhaMensagem(u, x, conversaId, id) {
     var lista2, minha;
@@ -1320,7 +1482,7 @@ var Core = (function () {
     var r = minhaMensagem(u, x, cid, a.id), t = String(a.texto || '').trim();
     if (!r.minha) erro('Você só pode editar suas mensagens.');
     if (!dentroDoPrazo(r.m.em)) erro('O prazo para editar acabou: a mensagem só pode ser editada até 10 minutos depois de enviada.');
-    if (!t) erro('A mensagem não pode ficar vazia. Se quiser, apague a mensagem.');
+    if (!t && !r.m.img) erro('A mensagem não pode ficar vazia. Se quiser, apague a mensagem.');
     var d = {}; for (var k in r.m) if (['id', 'em'].indexOf(k) < 0) d[k] = r.m[k];
     d.texto = t.substr(0, 2000); d.editado = agora();
     T('Mensagens').update(function (k) { return k.id === a.id && k.grupoId === x.g.id; }, { dados: Cripto.cifrar(d) });
@@ -1332,7 +1494,7 @@ var Core = (function () {
     var r = minhaMensagem(u, x, a.conversaId, a.id);
     if (!r.minha) erro('Você só pode apagar suas mensagens.');
     if (mensagensDe(x.g.id, a.conversaId).some(function (k) { return k.resp === a.id; })) erro('Esta mensagem já foi respondida e não pode mais ser apagada.');
-    T('Mensagens').remove(function (k) { return k.id === a.id && k.grupoId === x.g.id; });
+    removerMensagens(function (k) { return k.id === a.id && k.grupoId === x.g.id; });
     return api.mensagens(a);
   };
 
@@ -1361,28 +1523,30 @@ var Core = (function () {
     function autorDe(m) { if (m.anon) return 'Anônimo'; var pu = usuario(m.autor); return pu ? pu.nome : '?'; }
     return todas.map(function (m) {
       var pu = m.anon ? null : usuario(m.autor), orig = m.resp ? porId[m.resp] : null;
-      return { id: m.id, anonimo: !!m.anon, autor: autorDe(m), foto: pu ? pu.foto : '', texto: m.texto, em: m.em, minha: m.autor === u.email, podeApagar: (m.autor === u.email && !resp[m.id]) || (adm && m.autor !== u.email), respondida: !!resp[m.id],
+      return { id: m.id, anonimo: !!m.anon, autor: autorDe(m), foto: pu ? pu.foto : '', texto: m.texto, img: imgPublica(x.g.id, 'MURAL', m), em: m.em, minha: m.autor === u.email, podeApagar: (m.autor === u.email && !resp[m.id]) || (adm && m.autor !== u.email), respondida: !!resp[m.id],
+        podeTirarFoto: !!m.img && (m.autor === u.email || adm),
         editado: m.editado || '', podeEditar: m.autor === u.email && dentroDoPrazo(m.em),
         administrador: !m.anon && (ehAdmin(x.g, m.autor) || ehSuper(m.autor)),
-        resposta: m.resp ? (orig ? { id: orig.id, autor: autorDe(orig), texto: resumo(orig.texto, 160) } : { apagada: true }) : null };
+        resposta: m.resp ? (orig ? { id: orig.id, autor: autorDe(orig), texto: textoCurto(orig, 160) } : { apagada: true }) : null };
     }).reverse();
   };
   api.publicarMural = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), t = String(a.texto || '').trim();
     exigirParticipante(x);
-    if (!t) erro('Escreva uma mensagem.');
+    if (!t && !a.imagem) erro('Escreva uma mensagem.');
     var orig = null;
     if (a.respostaA) { orig = mensagensDe(x.g.id, 'MURAL').filter(function (k) { return k.id === a.respostaA; })[0]; if (!orig) erro('O recado que você quer responder foi apagado.'); }
     var dados = { autor: u.email, anon: !!a.anonimo, texto: t.substr(0, 2000) }; if (orig) dados.resp = orig.id;
+    var img = guardarImagem(conferirImagem(u, a)); if (img) dados.img = img;
     T('Mensagens').insert({ id: Cripto.token().substr(0, 16), grupoId: x.g.id, conversaId: 'MURAL', dados: Cripto.cifrar(dados), em: agora() });
     // quem escreveu o recado original recebe um aviso pessoal (sem revelar respostas anônimas)
-    if (orig && orig.autor !== u.email) avisar(orig.autor, 'Responderam ao seu recado no mural 💬', (a.anonimo ? 'Alguém' : nomeDe(u.email)) + ' respondeu: "' + resumo(t, 120) + '"');
+    if (orig && orig.autor !== u.email) avisar(orig.autor, 'Responderam ao seu recado no mural 💬', (a.anonimo ? 'Alguém' : nomeDe(u.email)) + ' respondeu: ' + previaAviso(t, !!img, 120));
     var oficial = !a.anonimo && (ehAdmin(x.g, u.email) || ehSuper(u.email));
     var outros = membros(x.g.id).map(function (m) { return m.email; }).filter(function (e) { return e !== u.email; });
     // recado do administrador sempre avisa; os demais no máximo um aviso a cada 30 minutos por grupo
     if (oficial || primeiraVez('mural:' + x.g.id, 600)) {
       var quem = a.anonimo ? 'Recado anônimo' : (oficial ? 'Recado do administrador ' + nomeDe(u.email) : 'Recado de ' + nomeDe(u.email));
-      avisarVarios(outros, oficial ? '📣 ' + quem : 'Novo recado no mural', (oficial ? '' : quem + ': ') + '"' + resumo(t, 140) + '"', { ir: 'mural', g: x.g.id });
+      avisarVarios(outros, oficial ? '📣 ' + quem : 'Novo recado no mural', (oficial ? '' : quem + ': ') + previaAviso(t, !!img, 140), { ir: 'mural', g: x.g.id });
     }
     return api.mural(a);
   };
@@ -1392,7 +1556,20 @@ var Core = (function () {
     if (!m) erro('Mensagem não encontrada.');
     if (m.autor !== u.email && !adm) erro('Você só pode apagar suas mensagens.');
     if (m.autor === u.email && mensagensDe(x.g.id, 'MURAL').some(function (k) { return k.resp === a.id; })) erro('Esta mensagem já foi respondida e não pode mais ser apagada.');
-    T('Mensagens').remove(function (k) { return k.id === a.id; });
+    removerMensagens(function (k) { return k.id === a.id && k.grupoId === x.g.id; });
+    return api.mural(a);
+  };
+  /* Tirar só a foto de um recado do mural (o texto fica): quem publicou ou um administrador do grupo */
+  api.tirarFotoMural = function (a) {
+    var u = sessao(a.token), x = exigirMembro(u, a.grupoId), adm = ehAdmin(x.g, u.email);
+    exigirParticipante(x);
+    var m = mensagensDe(x.g.id, 'MURAL').filter(function (k) { return k.id === a.id; })[0];
+    if (!m || !m.img) erro('Foto não encontrada. Ela pode já ter sido removida.');
+    if (m.autor !== u.email && !adm) erro('Só quem publicou ou um administrador pode remover a foto.');
+    apagarImagem(m);
+    var d = {}; for (var k in m) if (['id', 'em', 'img'].indexOf(k) < 0) d[k] = m[k];
+    if (!String(d.texto || '').trim()) d.texto = m.autor === u.email ? '(foto removida)' : '(foto removida pela administração)';
+    T('Mensagens').update(function (k) { return k.id === a.id && k.grupoId === x.g.id; }, { dados: Cripto.cifrar(d) });
     return api.mural(a);
   };
 
@@ -1700,7 +1877,7 @@ var Core = (function () {
     if (!g.sorteioEm) return;
     T('Sorteios').remove(function (s) { return s.grupoId === g.id; });
     var ids = T('Conversas').all().filter(function (c) { return c.grupoId === g.id && c.tipo === 'amigo'; }).map(function (c) { return c.id; });
-    T('Mensagens').remove(function (m) { return ids.indexOf(m.conversaId) >= 0; });
+    removerMensagens(function (m) { return m.grupoId === g.id && ids.indexOf(m.conversaId) >= 0; });
     T('Conversas').remove(function (c) { return ids.indexOf(c.id) >= 0; });
     T('Grupos').update(function (k) { return k.id === g.id; }, { sorteioEm: '', sorteioCodigo: '' });
     T('Membros').update(function (m) { return m.grupoId === g.id; }, { sorteioEmail: '', sorteioRecebidoEm: '', tokenRecebido: '' });
@@ -1760,7 +1937,7 @@ var Core = (function () {
     anularSorteio(g, 'remoção de participante', u.email);
     T('Membros').remove(function (m) { return m.grupoId === g.id && m.email === alvo; });
     var convs = T('Conversas').all().filter(function (c) { return c.grupoId === g.id; }).filter(function (c) { var d = Cripto.decifrar(c.dados); return d.a === alvo || d.b === alvo; }).map(function (c) { return c.id; });
-    T('Mensagens').remove(function (m) { return convs.indexOf(m.conversaId) >= 0; });
+    removerMensagens(function (m) { return m.grupoId === g.id && convs.indexOf(m.conversaId) >= 0; });
     T('Conversas').remove(function (c) { return convs.indexOf(c.id) >= 0; });
     compras(g.id).forEach(function (c) {
       if (c.comprador === alvo) T('Compras').update(function (k) { return k.id === c.id; }, { status: 'recusado', motivo: 'removido', encerradoEm: agora() });
@@ -2115,12 +2292,20 @@ var Core = (function () {
     return o;
   }
   api.fotos = function (a) {
-    sessao(a.token);
+    var eu = sessao(a.token);
     var pedidas = {}, r = {};
     (a.refs || []).slice(0, 80).forEach(function (x) { pedidas[x] = 1; });
     function ver(v) { if (v && v.length > 300 && v.indexOf('data:image/') === 0) { var k = refFoto(v); if (pedidas[k]) r[k] = v; } }
     T('Usuarios').all().forEach(function (u) { ver(u.foto); });
     T('Grupos').all().forEach(function (g) { ver(g.logo); });
+    // miniaturas das imagens das mensagens ("f:m.grupo.conversa.mensagem"): só para quem pode ver a mensagem; poucas por chamada
+    var minis = 0, memo = {};
+    Object.keys(pedidas).forEach(function (k) {
+      var p = /^f:m\.([A-Za-z0-9]+)\.([A-Za-z0-9]+)\.([A-Za-z0-9]+)$/.exec(k); if (!p || minis >= 8) return;
+      minis++;
+      var m = mensagemComImagem(eu, p[1], p[2], p[3], memo), url = m ? lerArquivoImagem(m.img.m) : '';
+      r[k] = url || 'x';   // 'x' = não existe ou não é para esta pessoa (o aparelho não pede de novo)
+    });
     return r;
   };
 
@@ -2128,9 +2313,9 @@ var Core = (function () {
   function chamar(nome, args) {
     if (!api.hasOwnProperty(nome)) return { erro: 'Função desconhecida.' };
     try {
-      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|statusAvisos)$/.test(nome);
+      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|imagem|statusAvisos)$/.test(nome);
       var r = escrita && P.travar ? P.travar(function () { return api[nome](args || {}); }) : api[nome](args || {});
-      return { ok: nome === 'fotos' ? r : trocarFotos(r) };
+      return { ok: nome === 'fotos' || nome === 'imagem' ? r : trocarFotos(r) };
     } catch (e) {
       if (!e.amigavel && P.registrarErro) P.registrarErro(nome, e);
       return { erro: e.amigavel ? e.message : 'Erro inesperado: ' + e.message };
@@ -2157,7 +2342,7 @@ var Core = (function () {
 
   function entrarDemonstracao(email) { var u = usuario(email); if (!u || String(u.ativo) !== 'sim') erro('Essa pessoa ainda não confirmou o convite.'); return { token: criarSessao(u.email) }; }
 
-  return { chamar: chamar, api: api, enviarConvite: enviarConvite, norm: norm, ficticio: ficticio, lembretesDiarios: lembretesDiarios, entrarDemonstracao: entrarDemonstracao };
+  return { chamar: chamar, api: api, limparJpeg: limparJpeg, enviarConvite: enviarConvite, norm: norm, ficticio: ficticio, lembretesDiarios: lembretesDiarios, entrarDemonstracao: entrarDemonstracao };
 })();
 
 /* =====================================================================
@@ -2208,8 +2393,21 @@ var DEMO = (function () {
     try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
     catch (e) { return new Date().toISOString().substr(0, 10); }
   }
+  /* Imagens das mensagens: na demonstração ficam neste navegador (no lugar da pasta do Google Drive), já cifradas.
+     Guardadas à parte dos outros dados e só as mais recentes, para não encher a memória do navegador. */
+  var CHAVE_IMG = CHAVE_LS + '-img', imgs = null, IMG_LIMITE = 1800000;
+  function lerImgs() { if (!imgs) { try { imgs = JSON.parse(localStorage.getItem(CHAVE_IMG) || '{}') || {}; } catch (e) { imgs = {}; } } return imgs; }
+  function salvarImgs() {
+    var o = lerImgs(), ks = Object.keys(o), j = JSON.stringify(o);
+    while (j.length > IMG_LIMITE && ks.length > 2) { delete o[ks.shift()]; j = JSON.stringify(o); }   // as mais antigas saem primeiro
+    try { localStorage.setItem(CHAVE_IMG, j); } catch (e) { }
+  }
   return { ler: ler, salvar: salvar, tab: tab, rnd: rnd, hojeSP: hojeSP,
-    reiniciar: function () { mem = null; try { localStorage.removeItem(CHAVE_LS); } catch (e) { } ler(); salvar(); },
+    imgGuardar: function (bytes) { var id = 'demo' + Cripto.hex(rnd(12)); lerImgs()[id] = Cripto.b64(bytes); salvarImgs(); return id; },
+    imgLer: function (id) { var v = lerImgs()[id]; return v ? Cripto.deB64(v) : null; },
+    imgApagar: function (id) { delete lerImgs()[id]; salvarImgs(); },
+    imgIds: function () { return Object.keys(lerImgs()); },
+    reiniciar: function () { mem = null; imgs = {}; try { localStorage.removeItem(CHAVE_LS); localStorage.removeItem(CHAVE_IMG); } catch (e) { } ler(); salvar(); },
     caixa: function () { return ler().caixa; },
     simularData: function (d) { ler().dataSimulada = d || ''; salvar(); } };
 })();
@@ -2239,6 +2437,9 @@ var P = {
   telegramAtualizacoes: function () {
     return DEMO.tab('Usuarios').filter(function (u) { return /^pend:/.test(u.avisoTopico); }).map(function (u, i) { return { chatId: 7000 + i, texto: '/start ' + u.avisoTopico.substr(5) }; });
   },
+  imgGuardar: function (bytes) { return DEMO.imgGuardar(bytes); },
+  imgLer: function (id) { return DEMO.imgLer(id); },
+  imgApagar: function (id) { DEMO.imgApagar(id); },
   pushAtivo: function () { return true; },
   pushAparelhos: function () { return [{ type: 'iOSPush', enabled: true, notification_types: 1, device_model: 'iPhone (demonstração)' }]; },
   push: function (ids, titulo, msg) {
@@ -2265,6 +2466,38 @@ var MODO_DEMO = !GAS && typeof Core !== 'undefined';
 var $ = function(s, r){ return (r||document).querySelector(s); };
 var $$ = function(s, r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); };
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+/*LINKS*/
+/* Endereços (http://, https:// e www.) escritos nas mensagens viram links tocáveis. Segurança: cada pedaço do texto é
+   escapado por esc(); só vira link o que o navegador reconhece como endereço http/https (nada de javascript:, data: etc.). */
+function enderecoSeguro(u){
+  var s=String(u==null?'':u).trim(); if(!s || s.length>2000 || /[\s<>"'`\\]/.test(s)) return '';
+  if(/^www\./i.test(s)) s='https://'+s;
+  if(!/^https?:\/\/[^\/?#@]/i.test(s)) return '';
+  try{ var o=new URL(s); if(o.protocol!=='http:' && o.protocol!=='https:') return ''; if(!/^[^.]+(\.[^.]+)+\.?$/.test(o.hostname) || o.username || o.password) return ''; return o.href; }catch(e){ return ''; }
+}
+function rotuloLink(txt, href){
+  if(txt.length<=48) return txt;
+  var o; try{ o=new URL(href); }catch(e){ return txt.slice(0,45)+'…'; }
+  var dom=o.hostname.replace(/^www\./i,''), resto=(o.pathname==='/'?'':o.pathname)+o.search+o.hash;
+  if(dom.length>40) return dom.slice(0,39)+'…';
+  return dom+(resto? resto.slice(0,Math.max(0,44-dom.length))+'…' : '');
+}
+function linkar(texto){
+  var t=String(texto==null?'':texto), re=/(?:https?:\/\/|www\.)[^\s<>"'`]+/gi, out='', pos=0, m;
+  while((m=re.exec(t))){
+    var bruto=m[0], ini=m.index;
+    if(ini>0 && /[A-Za-z0-9@._\-\/]/.test(t.charAt(ini-1))) continue;   // no meio de outra palavra (ex.: e-mail) não é endereço
+    for(;;){   // pontuação do fim da frase não faz parte do endereço
+      var u=bruto.charAt(bruto.length-1);
+      if(/[.,;:!?…'’”»\]}]/.test(u) || (u===')' && bruto.split('(').length < bruto.split(')').length)) bruto=bruto.slice(0,-1); else break;   // ")" só sai se não tiver o "(" correspondente
+    }
+    var href=enderecoSeguro(bruto); if(!href) continue;
+    out+=esc(t.slice(pos, ini))+'<a class="lk" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer" title="'+esc(href)+'">'+esc(rotuloLink(bruto, href))+'</a>';
+    pos=ini+bruto.length; re.lastIndex=pos;
+  }
+  return out+esc(t.slice(pos));
+}
+/*FIM-LINKS*/
 /* Memória local. Quando o app roda dentro da página de entrada (portal), a página de entrada guarda os dados
    por ele, porque o Safari do iPhone limita a memória de páginas embutidas. */
 var PORTAL = (window.__PARAMS__||{}).portal || '', VIA_PORTAL = false, MEM = {};
@@ -2314,7 +2547,7 @@ function conectarPortal(pronto){
   if(!PORTAL || window.top===window.self) return pronto();
   var feito=false;
   function fim(){ if(feito) return; feito=true; window.removeEventListener('message', ouvir); pronto(); }
-  function ouvir(ev){ if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='dados') return; VIA_PORTAL=true; MEM=ev.data.dados||{};
+  function ouvir(ev){ if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='dados') return; VIA_PORTAL=true; MEM=ev.data.dados||{}; PORTAL_ABRE_LINKS=ev.data.links===true;
     // a página de entrada informa a altura da barrinha do iPhone: a barra de abas passa por trás dela
     var mg=ev.data.margens; if(mg && mg.base>0) document.documentElement.style.setProperty('--sab', Math.max(6, Math.round(mg.base-20))+'px');
     fim(); }
@@ -2322,6 +2555,22 @@ function conectarPortal(pronto){
   try{ window.top.postMessage({flecha:'pedir'}, PORTAL); }catch(e){}
   setTimeout(fim, 1200);
 }
+
+/* Links das mensagens abrem FORA do app (o app nunca navega para outro lugar). Dentro da página de entrada, quem abre é ela
+   (a moldura do Google pode engolir o toque); fora dela, o próprio link abre em nova aba. */
+var PORTAL_ABRE_LINKS=false;
+function abrirLink(href){
+  var u=enderecoSeguro(href); if(!u) return false;
+  if(VIA_PORTAL && PORTAL_ABRE_LINKS){ try{ window.top.postMessage({flecha:'abrir-link', url:u}, PORTAL); return true; }catch(e){} }
+  try{ var w=window.open(u, '_blank', 'noopener,noreferrer'); if(w) try{ w.opener=null; }catch(e){} }catch(e){}
+  return true;
+}
+document.addEventListener('click', function(ev){
+  var a=ev.target && ev.target.closest && ev.target.closest('a.lk'); if(!a) return;
+  ev.preventDefault(); ev.stopPropagation();   // não abre as ações da mensagem nem troca a página do app
+  abrirLink(a.getAttribute('href'));
+}, true);
+document.addEventListener('keydown', function(ev){ if(ev.key==='Enter' && ev.target && ev.target.matches && ev.target.matches('a.lk')) ev.stopPropagation(); }, true);
 
 /* Notificações do aplicativo: a página de entrada cuida da permissão e da inscrição */
 function falarPortal(m){ if(!VIA_PORTAL) return false; try{ window.top.postMessage(m, PORTAL); return true; }catch(e){ return false; } }
@@ -2368,6 +2617,7 @@ var I = {
   grupos:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
   cadeado:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   enviar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 12 20 4l-4 16-4-7z"/></svg>',
+  foto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   olho:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
   olhoFechado:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
   sair:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg>',
@@ -2406,19 +2656,129 @@ function iniciais(n){ return String(n||'?').trim().split(/\s+/).slice(0,2).map(f
 var FOTOS={}, fotosPedidas={}, tFotos=null, tGuardaFotos=null, VAZIO='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 function carregarFotosGuardadas(){ try{ FOTOS=JSON.parse(lsGet('flecha-fotos')||'{}')||{}; }catch(e){ FOTOS={}; } }
 function ehRef(f){ return typeof f==='string' && f.indexOf('f:')===0; }
-function srcFoto(f){ if(!f) return ''; if(!ehRef(f)) return f; if(FOTOS[f]) return FOTOS[f]; pedirFoto(f); return VAZIO; }
+function ehMini(f){ return typeof f==='string' && f.indexOf('f:m.')===0; }   // miniatura de foto de mensagem ("f:m.grupo.conversa.mensagem")
+function srcFoto(f){ if(!f) return ''; if(!ehRef(f)) return f; if(FOTOS[f]) return FOTOS[f]==='x'? VAZIO : FOTOS[f]; pedirFoto(f); return VAZIO; }
 function imgAttrs(f){ return 'src="'+esc(srcFoto(f))+'"'+(ehRef(f) && !FOTOS[f]? ' data-fref="'+esc(f)+'"' : ''); }
+/* guarda no aparelho: fotos de perfil sempre; miniaturas das mensagens só as mais recentes (as antigas saem para caber) */
+function guardarFotos(){
+  var o={}, tam=2, k; for(k in FOTOS) if(FOTOS[k]!=='x'){ o[k]=FOTOS[k]; tam+=k.length+FOTOS[k].length+6; }
+  var ms=Object.keys(o).filter(ehMini);
+  while(tam>2000000 && ms.length){ k=ms.shift(); tam-=k.length+o[k].length+6; delete o[k]; }
+  if(tam<2500000) lsSet('flecha-fotos', JSON.stringify(o));
+}
+function esquecerMinis(){ Object.keys(FOTOS).forEach(function(k){ if(ehMini(k)) delete FOTOS[k]; }); Object.keys(fotosPedidas).forEach(function(k){ if(ehMini(k)) delete fotosPedidas[k]; }); IMG_CHEIA={}; guardarFotos(); }
+function baixarFotos(refs){
+  return chamar('fotos',{refs:refs}).then(function(m){
+    for(var k in m) FOTOS[k]=m[k];
+    $$('[data-fref]').forEach(function(el){ var r=el.getAttribute('data-fref'); if(!FOTOS[r]) return;
+      el.removeAttribute('data-fref');
+      if(FOTOS[r]==='x'){ var b=el.closest('.msg-img'); if(b){ b.classList.add('sumiu'); b.textContent='Foto indisponível'; } }
+      else el.src=FOTOS[r]; });
+    clearTimeout(tGuardaFotos); tGuardaFotos=setTimeout(guardarFotos, 1500);
+  }).catch(function(){ refs.forEach(function(k){ delete fotosPedidas[k]; }); });
+}
 function pedirFoto(ref){
   if(fotosPedidas[ref]) return; fotosPedidas[ref]=1;
   clearTimeout(tFotos); tFotos=setTimeout(function(){
     var refs=Object.keys(fotosPedidas).filter(function(k){ return fotosPedidas[k]===1; }); if(!refs.length) return;
     refs.forEach(function(k){ fotosPedidas[k]=2; });
-    chamar('fotos',{refs:refs}).then(function(m){
-      for(var k in m) FOTOS[k]=m[k];
-      $$('[data-fref]').forEach(function(el){ var r=el.getAttribute('data-fref'); if(FOTOS[r]){ el.src=FOTOS[r]; el.removeAttribute('data-fref'); } });
-      clearTimeout(tGuardaFotos); tGuardaFotos=setTimeout(function(){ var j=JSON.stringify(FOTOS); if(j.length<2500000) lsSet('flecha-fotos', j); }, 1500);
-    }).catch(function(){ refs.forEach(function(k){ delete fotosPedidas[k]; }); });
+    // fotos de perfil numa chamada só; miniaturas das mensagens em lotes pequenos, começando pelas que estão à vista
+    var perfis=refs.filter(function(k){ return !ehMini(k); }), minis=refs.filter(ehMini), lotes=[], meio=window.innerHeight/2, dist={};
+    minis.forEach(function(k){ var el=document.querySelector('[data-fref="'+k+'"]'), r=el? el.getBoundingClientRect() : null; dist[k]=r? Math.abs((r.top+r.bottom)/2-meio) : 1e9; });
+    minis.sort(function(a,b){ return dist[a]-dist[b]; });
+    if(perfis.length) lotes.push(perfis);
+    for(var i=0;i<minis.length;i+=6) lotes.push(minis.slice(i,i+6));
+    (function proximo(){ var l=lotes.shift(); if(l) baixarFotos(l).then(proximo); })();
   }, 40);
+}
+
+/* ---------- fotos nas mensagens (conversas e mural) ---------- */
+var IMG_CHEIA={};   // fotos em tamanho grande já baixadas: só na memória, nunca guardadas no aparelho
+/* Reduz e recomprime a imagem NO APARELHO antes de enviar. Redesenhar num canvas e gerar um JPEG novo também
+   descarta os metadados do arquivo original (EXIF, GPS, modelo do celular): obrigatório para o anonimato. */
+function reduzirImagem(img, lado, maxLetras){
+  var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height, q=0.82, url;
+  if(!w || !h) throw new Error('vazia');
+  for(var t=0;t<12;t++){
+    var e=Math.min(1, lado/Math.max(w,h)), cw=Math.max(1,Math.round(w*e)), ch=Math.max(1,Math.round(h*e));
+    var c=document.createElement('canvas'); c.width=cw; c.height=ch;
+    var cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cw,ch); cx.drawImage(img,0,0,w,h,0,0,cw,ch);
+    url=c.toDataURL('image/jpeg', q);
+    if(url.indexOf('data:image/jpeg;base64,')!==0) throw new Error('formato');
+    if(url.length<=maxLetras) return url;
+    q-=0.12; if(q<0.5){ q=0.76; lado=Math.round(lado*0.8); }
+  }
+  throw new Error('grande');
+}
+function prepararFoto(arq){
+  return new Promise(function(res, rej){
+    if(!arq || !/^image\//.test(arq.type||'')) return rej(new Error('Só é possível enviar fotos e imagens. Vídeos, PDFs e outros documentos ainda não.'));
+    if(arq.size > 15*1024*1024) return rej(new Error('Esta imagem é grande demais (mais de 15 MB). Escolha outra foto ou envie um print dela.'));
+    var u=URL.createObjectURL(arq), img=new Image();
+    img.onload=function(){
+      // na demonstração as imagens ficam no próprio navegador: vão menores
+      try{ res({ imagem:reduzirImagem(img, MODO_DEMO?960:1280, MODO_DEMO?130000:400000), miniatura:reduzirImagem(img, 360, 40000) }); }
+      catch(e){ rej(new Error('Não consegui preparar esta imagem. Tente outra foto.')); }
+      URL.revokeObjectURL(u);
+    };
+    img.onerror=function(){ URL.revokeObjectURL(u); rej(new Error('Não consegui abrir esta imagem. Tente outra (JPG ou PNG).')); };
+    img.src=u;
+  });
+}
+function imagemColada(ev){
+  var cd=ev.clipboardData; if(!cd) return null;
+  var its=cd.items||[], i, a;
+  for(i=0;i<its.length;i++) if(its[i].kind==='file' && /^image\//.test(its[i].type)){ a=its[i].getAsFile(); if(a) return a; }
+  var fs=cd.files||[]; for(i=0;i<fs.length;i++) if(/^image\//.test(fs[i].type)) return fs[i];
+  return null;
+}
+/* Janela para escolher a foto: galeria ou câmera. (Colar uma imagem copiada funciona direto no campo de texto.) */
+function escolherFoto(aoEscolher){
+  var toque=window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+  modal('<h2>Enviar uma foto</h2>'+
+    '<label class="btn sec larga" style="cursor:pointer">'+I.foto+'Escolher da galeria<input type="file" accept="image/*" id="ef-gal" hidden></label>'+
+    (toque? '<label class="btn sec larga" style="cursor:pointer">'+I.foto+'Tirar uma foto agora<input type="file" accept="image/*" capture="environment" id="ef-cam" hidden></label>' : '')+
+    '<div class="muted" style="font-size:13px">Também dá para <b>colar</b> uma imagem copiada direto no campo de texto. Uma foto por mensagem; ela é reduzida no seu aparelho antes de enviar. Vídeos e documentos ainda não.</div>'+
+    '<button class="btn" data-fechar>Cancelar</button>', function(md, fechar){
+    $$('input[type=file]',md).forEach(function(inp){ inp.onchange=function(){ var a=inp.files && inp.files[0]; fechar(); if(a) aoEscolher(a); }; });
+  });
+}
+/* Anexo de foto de um campo de mensagem. cfg: caixa (onde aparece a prévia), campo (textarea), botao, anonimo() */
+function anexador(cfg){
+  var atual=null, preparando=false;
+  function mostrar(){
+    if(!atual && !preparando){ cfg.caixa.hidden=true; cfg.caixa.innerHTML=''; return; }
+    cfg.caixa.hidden=false;
+    cfg.caixa.innerHTML = preparando? '<div class="anexo"><span class="giro" style="width:20px;height:20px;border-width:2px;flex:none"></span><div class="txt">Preparando a foto…</div></div>' :
+      '<div class="anexo"><img src="'+esc(atual.miniatura)+'" alt="Foto escolhida"><div class="txt"><b>Foto pronta para enviar</b>'+
+      (cfg.anonimo && cfg.anonimo()? '<div class="alerta-anon">Atenção: a foto pode revelar quem você é (ambiente, letra, objetos).</div>' : '<div class="muted" style="font-size:12.5px">Se quiser, escreva um texto junto.</div>')+
+      '</div><button type="button" class="link" data-tirar aria-label="Tirar a foto">✕</button></div>';
+  }
+  // a prévia muda a altura da área de escrever: com o teclado aberto (ex.: ao colar), pede de novo a faixa visível à página de entrada
+  function reposicionar(){ if(document.activeElement===cfg.campo) avisarFoco({target:cfg.campo}); }
+  function receber(arq){ preparando=true; mostrar(); prepararFoto(arq).then(function(f){ atual=f; }).catch(falha).then(function(){ preparando=false; if(document.body.contains(cfg.caixa)){ mostrar(); reposicionar(); } }); }
+  cfg.caixa.addEventListener('click', function(ev){ if(ev.target.closest('[data-tirar]')){ atual=null; mostrar(); } });
+  cfg.botao.onclick=function(){ try{ cfg.campo.blur(); }catch(e){} escolherFoto(receber); };   // fecha o teclado antes de abrir a janela
+  cfg.campo.addEventListener('paste', function(ev){ var arq=imagemColada(ev); if(arq){ ev.preventDefault(); receber(arq); } });
+  return { pegar:function(){ return atual; }, preparando:function(){ return preparando; }, limpar:function(){ atual=null; mostrar(); }, atualizar:mostrar };
+}
+function htmlImagem(img){
+  if(!img) return '';
+  if(FOTOS[img.mini]==='x') return '<div class="msg-img sumiu">Foto indisponível</div>';
+  return '<button type="button" class="msg-img" data-img="1" style="aspect-ratio:'+(Math.round(+img.l)||4)+'/'+(Math.round(+img.a)||3)+'" aria-label="Ver a foto maior"><img '+imgAttrs(img.mini)+' alt="Foto"></button>';
+}
+/* depois de enviar, a miniatura que acabou de sair deste aparelho já fica no cache (não precisa baixar de volta) */
+function lembrarMini(itens, foto){ if(!foto) return; var m=itens.filter(function(k){ return k.minha && k.img && !FOTOS[k.img.mini]; }).sort(function(a,b){ return a.em<b.em?1:-1; })[0]; if(m){ FOTOS[m.img.mini]=foto.miniatura; fotosPedidas[m.img.mini]=2; } }
+function verImagem(conversaId, m){
+  if(!m || !m.img) return;
+  var ch=conversaId+'.'+m.id, mini=FOTOS[m.img.mini], l=Math.round(+m.img.l)||4, a=Math.round(+m.img.a)||3;
+  modal('<div class="foto-msg"><img id="vi-img" src="'+esc(IMG_CHEIA[ch] || (mini && mini!=='x'? mini : VAZIO))+'" alt="Foto da mensagem" style="aspect-ratio:'+l+'/'+a+';width:'+l+'px"><div class="muted" id="vi-st" style="font-size:12.5px">'+(IMG_CHEIA[ch]?'':'Carregando em tamanho maior…')+'</div></div><button class="btn sec" data-fechar>Fechar</button>', function(md){
+    if(IMG_CHEIA[ch]) return;
+    chamar('imagem',{grupoId:S.gid, conversaId:conversaId, id:m.id}).then(function(r){
+      var ks=Object.keys(IMG_CHEIA); if(ks.length>=6) delete IMG_CHEIA[ks[0]];
+      IMG_CHEIA[ch]=r.url; var i=$('#vi-img',md), st=$('#vi-st',md); if(i) i.src=r.url; if(st) st.textContent='';
+    }).catch(function(e){ var st=$('#vi-st',md); if(st) st.textContent=e && e.message? e.message : 'Não foi possível carregar a foto.'; });
+  });
 }
 function avatar(foto, nome, cls){ return foto? '<img class="av '+(cls||'')+'" '+imgAttrs(foto)+' alt="">' : '<span class="av '+(cls||'')+'">'+esc(iniciais(nome))+'</span>'; }
 function avatarIcone(ic, cls){ return '<span class="av anon '+(cls||'')+'">'+I[ic]+'</span>'; }
@@ -2466,12 +2826,12 @@ function autoCrescer(t){
   t.addEventListener('input', ajusta); t._ajusta=ajusta; setTimeout(ajusta, 0);
 }
 /* Janela para editar um texto já enviado */
-function editarTexto(titulo, atual){
+function editarTexto(titulo, atual, podeVazio){
   return new Promise(function(res){
     modal('<h2>'+esc(titulo)+'</h2><textarea class="inp" id="ed-t" maxlength="2000">'+esc(atual)+'</textarea><div class="muted" style="font-size:13px">Você pode editar até 10 minutos depois de enviar. Quem recebeu verá a marcação “editada”.</div><div class="linha-acoes" style="justify-content:flex-end"><button class="btn sec" data-fechar>Cancelar</button><button class="btn" id="ed-ok">Salvar</button></div>', function(m, fechar){
       var t=$('#ed-t',m); autoCrescer(t); setTimeout(function(){ try{ t.focus(); t.setSelectionRange(t.value.length, t.value.length); }catch(e){} }, 80);
       var feito=false;
-      $('#ed-ok',m).onclick=function(){ var v=t.value.trim(); if(!v) return aviso('A mensagem não pode ficar vazia.', true); feito=true; fechar(); res(v); };
+      $('#ed-ok',m).onclick=function(){ var v=t.value.trim(); if(!v && !podeVazio) return aviso('A mensagem não pode ficar vazia.', true); feito=true; fechar(); res(v); };
       m.parentNode.addEventListener('click', function(ev){ if(!feito && (ev.target===m.parentNode || ev.target.closest('[data-fechar]'))) res(null); });
     });
   });
@@ -2479,13 +2839,13 @@ function editarTexto(titulo, atual){
 /* Menu ao tocar numa mensagem: responder, editar (até 10 min) e apagar */
 function menuMensagem(m, h){
   var pode=m.minha && m.podeEditar && (Date.now()-new Date(m.em).getTime() < 10*60*1000);
-  modal('<div class="acoes-msg"><div class="rotulo">'+(m.minha?'Sua mensagem':'Mensagem de '+esc(m.autor))+' · '+quando(m.em)+'</div><div class="previa">'+esc(m.texto)+'</div>'+
+  modal('<div class="acoes-msg"><div class="rotulo">'+(m.minha?'Sua mensagem':'Mensagem de '+esc(m.autor))+' · '+quando(m.em)+'</div><div class="previa">'+(m.img?'<div class="muted">📷 Foto</div>':'')+linkar(m.texto)+'</div>'+
     (h.responder? '<button class="btn sec" id="am-resp">'+I.balao+'Responder</button>' : '')+
     (m.minha && h.editar? (pode? '<button class="btn sec" id="am-ed">Editar</button>' : '<div class="muted" style="font-size:12.5px;text-align:center">Já passaram 10 minutos: esta mensagem não pode mais ser editada.</div>') : '')+
     (m.minha && h.apagar? (m.respondida? '<div class="muted" style="font-size:12.5px;text-align:center">Esta mensagem já foi respondida e não pode mais ser apagada.</div>' : '<button class="btn sec" id="am-del" style="color:var(--erro)">Apagar</button>') : '')+
     '<button class="btn" data-fechar>Fechar</button></div>', function(md, fechar){
     var br=$('#am-resp',md); if(br) br.onclick=function(){ fechar(); h.responder(); };
-    var be=$('#am-ed',md); if(be) be.onclick=function(){ fechar(); editarTexto('Editar mensagem', m.texto).then(function(v){ if(v!=null && v!==m.texto) h.editar(v); }); };
+    var be=$('#am-ed',md); if(be) be.onclick=function(){ fechar(); editarTexto(m.img?'Editar o texto da foto':'Editar mensagem', m.texto, !!m.img).then(function(v){ if(v!=null && v!==m.texto) h.editar(v); }); };
     var bd=$('#am-del',md); if(bd) bd.onclick=function(){ fechar(); confirmar('Apagar mensagem?', h.textoApagar||'A mensagem some para todos nesta conversa.', 'Apagar').then(function(ok){ if(ok) h.apagar(); }); };
   });
 }
@@ -2497,7 +2857,7 @@ function fio(box, cfg){
   function autor(m){ return cfg.rotuloAutor? cfg.rotuloAutor(m) : (m.minha?'Você':m.autor); }
   function desenhar(){
     box.innerHTML=(cfg.intro||'')+
-      (itens.length? '<div class="dica-chat" style="text-align:left;margin:0">Toque numa mensagem para responder, editar ou apagar.</div><div class="chat" style="padding:4px 0">'+itens.map(function(m){ return '<div class="bolha'+(m.minha?' minha':'')+'" data-m="'+esc(m.id)+'" role="button" tabindex="0">'+citacaoFio(m.resposta)+esc(m.texto)+'<div class="meta">'+esc(autor(m))+' · '+quando(m.em)+(m.editado?' · editada':'')+'</div></div>'; }).join('')+'</div>' : (cfg.vazio||''))+
+      (itens.length? '<div class="dica-chat" style="text-align:left;margin:0">Toque numa mensagem para responder, editar ou apagar.</div><div class="chat" style="padding:4px 0">'+itens.map(function(m){ return '<div class="bolha'+(m.minha?' minha':'')+'" data-m="'+esc(m.id)+'" role="button" tabindex="0">'+citacaoFio(m.resposta)+linkar(m.texto)+'<div class="meta">'+esc(autor(m))+' · '+quando(m.em)+(m.editado?' · editada':'')+'</div></div>'; }).join('')+'</div>' : (cfg.vazio||''))+
       '<form class="pilha fio-f" style="gap:8px"><div class="fio-resp" hidden></div><textarea class="inp fio-t" maxlength="3000" placeholder="'+esc(cfg.placeholder||'Escreva sua mensagem…')+'"></textarea><button class="btn sec">'+esc(cfg.rotulo||'Enviar')+'</button></form>';
     var t=$('.fio-t',box); autoCrescer(t);
     $$('.bolha[data-m]',box).forEach(function(b){ b.onclick=function(){ var m=itens.filter(function(k){ return k.id===b.dataset.m; })[0]; if(!m) return;
@@ -2635,7 +2995,7 @@ function telaPedidoGrupo(){
 function pedirSaida(){ confirmar('Sair da conta?', 'Para entrar de novo, você vai precisar do seu e-mail e da sua senha.', 'Sair').then(function(ok){ if(ok) sair(false); }); }
 function entrou(r){ S.token=r.token; lsSet('flecha-token', r.token); return iniciar(); }
 function sair(silencioso){
-  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); falarPortal({flecha:'push-sair'}); pushLigado=''; limparCache(); lsSet('flecha-cache', null);
+  var t=S.token; S.token=null; S.eu=null; S.g=null; lsSet('flecha-token', null); falarPortal({flecha:'push-sair'}); pushLigado=''; limparCache(); lsSet('flecha-cache', null); esquecerMinis();
   if(t && !silencioso) chamar('sair',{token:t}).catch(function(){});
   telaLogin(silencioso? 'Sua sessão expirou. Entre novamente.' : '');
 }
@@ -3115,7 +3475,7 @@ function abrirNovaMensagem(atalhos){
   });
 }
 function abrirConversa(c, id){
-  var resp=null, ultimo=null, avisado=false;
+  var resp=null, ultimo=null, avisado=false, anexo=null, chatHtml=null;
   function citacaoHTML(r){ return r? (r.apagada? '<div class="citacao">Respondendo a uma mensagem apagada</div>' : '<div class="citacao">'+esc(r.autor)+': “'+esc(r.texto)+'”</div>') : ''; }
   function mostrarResp(){
     var box=$('#cv-resp'); if(!box) return;
@@ -3135,8 +3495,9 @@ function abrirConversa(c, id){
     });
   }
   function enviar(txt, b){
-    var t=$('#cv-t');
-    return ocupado(b, function(){ return chamar('enviarMensagem',{grupoId:S.gid, conversaId:id, texto:txt, respostaA:resp||''}).then(function(d2){ t.value=''; if(t._ajusta) t._ajusta(); resp=null; mostrarResp(); desenhar(d2, false, true); }); });
+    var t=$('#cv-t'), ft=anexo.pegar(), args={grupoId:S.gid, conversaId:id, texto:txt, respostaA:resp||''};
+    if(ft){ args.imagem=ft.imagem; args.miniatura=ft.miniatura; }
+    return ocupado(b, function(){ return chamar('enviarMensagem',args).then(function(d2){ t.value=''; if(t._ajusta) t._ajusta(); resp=null; mostrarResp(); lembrarMini(d2.itens, ft); anexo.limpar(); desenhar(d2, false, true); }); });
   }
   function desenhar(d, primeira, rolar){
     ultimo=d;
@@ -3145,20 +3506,24 @@ function abrirConversa(c, id){
       c.innerHTML='<div class="cab-conversa"><button class="btn sec peq" id="cv-volta" aria-label="Voltar">'+I.voltar+'</button>'+avatarIcone(d.icone==='alvo'?'alvo':d.icone)+'<div style="min-width:0"><div style="font-weight:700">'+esc(d.titulo)+'</div><div class="muted" style="font-size:13px">'+esc(d.subtitulo)+'</div></div></div>'+
         (d.outroPendente? '<div class="faixa aviso-f" style="margin-top:12px"><div><b>'+esc(d.nomeOutro)+' ainda não confirmou a participação.</b> As mensagens ficam guardadas e poderão ser lidas depois que a pessoa confirmar o convite.</div></div>' : '')+
         '<div class="dica-chat">Toque numa mensagem para responder, editar ou apagar.</div>'+
-        '<div class="chat" id="chat"></div><div class="compor-wrap"><div id="cv-resp" hidden></div><form class="compor" id="cv-f"><textarea class="inp" id="cv-t" rows="1" placeholder="Escreva uma mensagem" maxlength="2000"></textarea><button class="btn" aria-label="Enviar">'+I.enviar+'</button></form></div>';
+        '<div class="chat" id="chat"></div><div class="compor-wrap"><div id="cv-resp" hidden></div><div id="cv-anexo" hidden></div><div class="compor-linha"><button type="button" class="btn sec anexar" id="cv-foto" aria-label="Enviar uma foto">'+I.foto+'</button><form class="compor" id="cv-f"><textarea class="inp" id="cv-t" rows="1" placeholder="Escreva uma mensagem" maxlength="2000"></textarea><button class="btn" aria-label="Enviar">'+I.enviar+'</button></form></div></div>';
+      anexo=anexador({caixa:$('#cv-anexo'), campo:$('#cv-t'), botao:$('#cv-foto'), anonimo:function(){ return !!(ultimo && ultimo.souAnonimo); }});
       chat=$('#chat');
       autoCrescer($('#cv-t'));
       $('#cv-volta').onclick=function(){ S.conv=null; pararAtualizacao(); abaConversas(c); };
-      $('#cv-f').onsubmit=function(ev){ ev.preventDefault(); var t=$('#cv-t'), txt=t.value.trim(); if(!txt) return; var b=this.querySelector('button');
+      $('#cv-f').onsubmit=function(ev){ ev.preventDefault(); var t=$('#cv-t'), txt=t.value.trim(); if(anexo.preparando()) return aviso('Aguarde um instante: a foto ainda está sendo preparada.'); if(!txt && !anexo.pegar()) return; var b=this.querySelector('button');
         if(ultimo && ultimo.outroPendente && !avisado){
           return confirmar(ultimo.nomeOutro+' ainda não confirmou', esc(ultimo.nomeOutro)+' ainda não confirmou a participação no grupo e, por isso, ainda não consegue entrar no aplicativo para ler. A mensagem fica guardada e poderá ser lida depois da confirmação.<br><br>Quer enviar mesmo assim?', 'Enviar mesmo assim').then(function(ok){ if(ok){ avisado=true; enviar(txt, b); } });
         }
         enviar(txt, b); };
       $('#cv-t').addEventListener('keydown', function(ev){ if(ev.key==='Enter' && !ev.shiftKey && window.innerWidth>700){ ev.preventDefault(); $('#cv-f').requestSubmit(); } });
-      chat.addEventListener('click', function(ev){ var b=ev.target.closest('.bolha[data-m]'); if(!b || !ultimo) return; var m=ultimo.itens.filter(function(k){ return k.id===b.dataset.m; })[0]; if(m) acoes(m); });
+      chat.addEventListener('click', function(ev){ var b=ev.target.closest('.bolha[data-m]'); if(!b || !ultimo) return; var m=ultimo.itens.filter(function(k){ return k.id===b.dataset.m; })[0]; if(!m) return;
+        if(ev.target.closest('.msg-img[data-img]')) return verImagem(id, m);   // tocar na foto amplia; tocar no resto do balão abre as ações
+        acoes(m); });
     }
     var embaixo = primeira || rolar || (window.innerHeight+window.scrollY >= document.body.scrollHeight-80);
-    chat.innerHTML = d.itens.length? d.itens.map(function(m){ return '<div class="bolha'+(m.minha?' minha':'')+'" data-m="'+esc(m.id)+'" role="button" tabindex="0">'+citacaoHTML(m.resposta)+esc(m.texto)+'<div class="meta">'+esc(m.autor)+' · '+quando(m.em)+(m.editado?' · editada':'')+'</div></div>'; }).join('') : '<div class="faixa info">Nenhuma mensagem ainda. '+(d.icone==='alvo'?'Seu amigo não saberá que é você.':d.icone==='presente'?'Quem tirou você está do outro lado, em segredo.':'')+'</div>';
+    var hc = d.itens.length? d.itens.map(function(m){ return '<div class="bolha'+(m.minha?' minha':'')+'" data-m="'+esc(m.id)+'" role="button" tabindex="0">'+citacaoHTML(m.resposta)+htmlImagem(m.img)+linkar(m.texto)+'<div class="meta">'+esc(m.autor)+' · '+quando(m.em)+(m.editado?' · editada':'')+'</div></div>'; }).join('') : '<div class="faixa info">Nenhuma mensagem ainda. '+(d.icone==='alvo'?'Seu amigo não saberá que é você.':d.icone==='presente'?'Quem tirou você está do outro lado, em segredo.':'')+'</div>';
+    if(hc!==chatHtml){ chat.innerHTML=hc; chatHtml=hc; }   // só redesenha quando mudou (as fotos não piscam a cada atualização)
     if(d.itens.length) marcarVisto(id, d.itens[d.itens.length-1].em);
     if(embaixo) window.scrollTo(0, document.body.scrollHeight);
   }
@@ -3172,14 +3537,14 @@ function abrirConversa(c, id){
 function abaMural(c, fresco){
   var ch='mural:'+S.gid; if(fresco){ delete CACHE[ch]; mexeu=false; }
   usarCache(ch,'mural',{grupoId:S.gid}, function(ps){
-    var anon=false, resp=null, porId={};
+    var anon=false, resp=null, porId={}, anexo=null;
     ps.forEach(function(p){ porId[p.id]=p; });
     c.innerHTML='<div class="secao"><h2>Mural do grupo</h2><div class="muted" style="margin-top:-6px">Mensagens para todos. Escolha se assina ou se fica anônimo. Toque em <b>Responder</b> para citar um recado. Seus recados podem ser editados até 10 minutos depois.</div>'+
-      '<form class="cartao pilha" id="mu-f"><div id="mu-resp" hidden></div><textarea class="inp" id="mu-t" maxlength="2000" placeholder="Escreva para o grupo todo…"></textarea><div class="linha-acoes" style="justify-content:space-between"><div class="alternar" role="group" aria-label="Como publicar"><button type="button" aria-pressed="true" data-an="0">Com meu nome</button><button type="button" aria-pressed="false" data-an="1">Anônimo</button></div><button class="btn" id="mu-pub">Publicar</button></div></form>'+
+      '<form class="cartao pilha" id="mu-f"><div id="mu-resp" hidden></div><textarea class="inp" id="mu-t" maxlength="2000" placeholder="Escreva para o grupo todo…"></textarea><div id="mu-anexo" hidden></div><div class="linha-acoes" style="justify-content:space-between"><div class="alternar" role="group" aria-label="Como publicar"><button type="button" aria-pressed="true" data-an="0">Com meu nome</button><button type="button" aria-pressed="false" data-an="1">Anônimo</button></div><div class="linha-acoes"><button class="btn" id="mu-pub">Publicar</button><button type="button" class="btn sec anexar" id="mu-foto" aria-label="Enviar uma foto">'+I.foto+'</button></div></div></form>'+
       '<div class="pilha" id="mu-l">'+(ps.length? ps.map(function(p){
         var cit = p.resposta? (p.resposta.apagada? '<div class="citacao">Respondendo a um recado que foi apagado</div>' : '<div class="citacao">Respondendo a <b>'+esc(p.resposta.autor)+'</b>: “'+esc(p.resposta.texto)+'”</div>') : '';
-        return '<div class="cartao post'+(p.administrador?' admin':'')+'" id="post-'+esc(p.id)+'">'+(p.anonimo? avatarIcone('mascara') : avatar(p.foto,p.autor))+'<div class="corpo"><div class="linha-acoes" style="justify-content:space-between"><b>'+esc(p.autor)+(p.administrador?' <span class="chip ouro">'+I.escudo.replace('<svg','<svg width="13" height="13"')+' administrador</span>':'')+(p.minha&&p.anonimo?' <span class="chip">você, anônimo</span>':'')+'</b><span class="muted" style="font-size:12px">'+quando(p.em)+(p.editado?' · editada':'')+'</span></div>'+cit+'<div class="texto">'+esc(p.texto)+'</div>'+
-          '<div class="linha-acoes" style="gap:14px"><button class="link" style="font-size:13px" data-resp="'+esc(p.id)+'">Responder</button>'+(p.podeEditar?'<button class="link" style="font-size:13px" data-ed="'+esc(p.id)+'">Editar</button>':'')+(p.podeApagar?'<button class="link" style="font-size:13px;color:var(--tinta-2)" data-del="'+esc(p.id)+'">Apagar</button>':'')+'</div></div></div>';
+        return '<div class="cartao post'+(p.administrador?' admin':'')+'" id="post-'+esc(p.id)+'">'+(p.anonimo? avatarIcone('mascara') : avatar(p.foto,p.autor))+'<div class="corpo"><div class="linha-acoes" style="justify-content:space-between"><b>'+esc(p.autor)+(p.administrador?' <span class="chip ouro">'+I.escudo.replace('<svg','<svg width="13" height="13"')+' administrador</span>':'')+(p.minha&&p.anonimo?' <span class="chip">você, anônimo</span>':'')+'</b><span class="muted" style="font-size:12px">'+quando(p.em)+(p.editado?' · editada':'')+'</span></div>'+cit+'<div class="texto">'+linkar(p.texto)+'</div>'+(p.img? '<div data-pimg="'+esc(p.id)+'">'+htmlImagem(p.img)+'</div>' : '')+
+          '<div class="linha-acoes" style="gap:14px"><button class="link" style="font-size:13px" data-resp="'+esc(p.id)+'">Responder</button>'+(p.podeEditar?'<button class="link" style="font-size:13px" data-ed="'+esc(p.id)+'">Editar</button>':'')+(p.podeTirarFoto?'<button class="link" style="font-size:13px;color:var(--tinta-2)" data-tf="'+esc(p.id)+'">Remover foto</button>':'')+(p.podeApagar?'<button class="link" style="font-size:13px;color:var(--tinta-2)" data-del="'+esc(p.id)+'">Apagar</button>':'')+'</div></div></div>';
       }).join('') : '<div class="cartao muted">Ninguém escreveu ainda. Que tal começar com um recado para a família?</div>')+'</div></div>';
     function mostrarResp(){
       var box=$('#mu-resp',c);
@@ -3189,15 +3554,20 @@ function abaMural(c, fresco){
       $('#mu-t',c).placeholder='Escreva sua resposta…';
       $('#mu-xr',c).onclick=function(){ resp=null; mostrarResp(); };
     }
-    $$('[data-an]',c).forEach(function(b){ b.onclick=function(){ anon=b.dataset.an==='1'; $$('[data-an]',c).forEach(function(x){ x.setAttribute('aria-pressed', x===b); }); }; });
+    anexo=anexador({caixa:$('#mu-anexo',c), campo:$('#mu-t',c), botao:$('#mu-foto',c), anonimo:function(){ return anon; }});
+    $$('[data-an]',c).forEach(function(b){ b.onclick=function(){ anon=b.dataset.an==='1'; $$('[data-an]',c).forEach(function(x){ x.setAttribute('aria-pressed', x===b); }); anexo.atualizar(); }; });
+    $$('[data-pimg]',c).forEach(function(d){ d.onclick=function(ev){ if(ev.target.closest('.msg-img[data-img]')) verImagem('MURAL', porId[d.dataset.pimg]); }; });
+    $$('[data-tf]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.tf]; confirmar('Remover a foto?', p.minha? 'A foto sai do mural para todos. O texto do recado continua.' : 'A foto sai do mural para todos e é apagada. O texto do recado continua, com a marca de que a foto foi removida pela administração.', 'Remover foto').then(function(ok){ if(ok) chamar('tirarFotoMural',{grupoId:S.gid, id:p.id}).then(function(){ FOTOS[p.img.mini]=''; abaMural(c, true); aviso('Foto removida.'); }).catch(falha); }); }; });
     $$('[data-resp]',c).forEach(function(b){ b.onclick=function(){ resp=b.dataset.resp; mostrarResp(); window.scrollTo({top:0, behavior:'smooth'}); setTimeout(function(){ $('#mu-t',c).focus(); }, 300); }; });
-    $('#mu-f',c).onsubmit=function(ev){ ev.preventDefault(); var t=$('#mu-t',c).value.trim(); if(!t) return; ocupado($('#mu-pub',c), function(){ return chamar('publicarMural',{grupoId:S.gid, texto:t, anonimo:anon, respostaA:resp||''}).then(function(){ abaMural(c, true); aviso(resp?'Resposta publicada.':'Publicado.'); }); }); };
+    $('#mu-f',c).onsubmit=function(ev){ ev.preventDefault(); var t=$('#mu-t',c).value.trim(), ft=anexo.pegar(); if(anexo.preparando()) return aviso('Aguarde um instante: a foto ainda está sendo preparada.'); if(!t && !ft) return;
+      var args={grupoId:S.gid, texto:t, anonimo:anon, respostaA:resp||''}; if(ft){ args.imagem=ft.imagem; args.miniatura=ft.miniatura; }
+      ocupado($('#mu-pub',c), function(){ return chamar('publicarMural',args).then(function(ps2){ lembrarMini(ps2, ft); abaMural(c, true); aviso(resp?'Resposta publicada.':'Publicado.'); }); }); };
     autoCrescer($('#mu-t',c));
     $$('[data-ed]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.ed];
       if(Date.now()-new Date(p.em).getTime() > 10*60*1000) return aviso('O prazo para editar acabou (10 minutos).', true);
-      editarTexto('Editar recado', p.texto).then(function(v){ if(v==null || v===p.texto) return; chamar('editarMensagem',{grupoId:S.gid, conversaId:'MURAL', id:p.id, texto:v}).then(function(){ abaMural(c, true); aviso('Recado editado.'); }).catch(falha); }); }; });
+      editarTexto('Editar recado', p.texto, !!p.img).then(function(v){ if(v==null || v===p.texto) return; chamar('editarMensagem',{grupoId:S.gid, conversaId:'MURAL', id:p.id, texto:v}).then(function(){ abaMural(c, true); aviso('Recado editado.'); }).catch(falha); }); }; });
     $$('[data-del]',c).forEach(function(b){ b.onclick=function(){ confirmar('Apagar mensagem?','A mensagem sai do mural para todos.','Apagar').then(function(s){ if(s) chamar('apagarMural',{grupoId:S.gid,id:b.dataset.del}).then(function(){ abaMural(c, true); }).catch(falha); }); }; });
-  }, function(){ var t=$('#mu-t'); return !t || (!t.value && document.activeElement!==t); });
+  }, function(){ var t=$('#mu-t'), ax=$('#mu-anexo'); return !t || (!t.value && document.activeElement!==t && (!ax || ax.hidden)); });
 }
 
 /* ---------- aba: participantes ---------- */
@@ -3287,11 +3657,17 @@ function abaAjuda(c){
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
         'Em <b>Nova mensagem</b>, escreva para qualquer pessoa do grupo, com seu nome ou anonimamente.',
         '<b>Toque numa mensagem</b> para responder (citando a mensagem), editar (até 10 minutos depois de enviar) ou apagar. Mensagem que já foi respondida não pode mais ser apagada.',
+        '<b>Fotos:</b> toque no botão da câmera, ao lado do campo de texto, para <b>escolher uma foto da galeria</b> ou <b>tirar uma foto na hora</b>. Você também pode <b>colar</b> uma imagem copiada direto no campo de texto. É uma foto por mensagem, com ou sem texto junto. Toque na foto recebida para ver maior.',
+        'A foto é reduzida no seu aparelho antes de enviar, e os dados escondidos do arquivo (local onde foi tirada, modelo do celular) são removidos. Mesmo assim, em conversa <b>anônima</b>, cuidado: o que aparece na foto (ambiente, letra, objetos) pode revelar quem você é.',
+        'Apagar a mensagem apaga também a foto. Vídeos, PDFs e outros documentos ainda não podem ser enviados.',
+        '<b>Links:</b> um endereço escrito na mensagem (começando com <b>https://</b>, <b>http://</b> ou <b>www.</b>) vira um link sublinhado. Toque nele para abrir no navegador, fora do aplicativo; para voltar, feche a página que abriu.',
         'A bolinha vermelha na aba avisa que há mensagem nova.',
         'Ninguém, nem os administradores, consegue ler as conversas dos outros.'
       ]))+
       bloco('mural','Mural', lst([
         'Recados para o grupo todo, com seu nome ou anônimos.',
+        'Endereços de sites escritos no recado viram <b>links</b>: toque para abrir no navegador.',
+        'O botão da câmera junta uma <b>foto</b> ao recado (da galeria, tirada na hora ou colada no campo de texto). Você pode remover a foto de um recado seu; os administradores podem remover qualquer foto do mural.',
         '<b>Responder</b> cita o recado original. Seus recados podem ser <b>editados</b> até 10 minutos depois e apagados enquanto ninguém tiver respondido.',
         'Os recados dos administradores aparecem com destaque dourado. Os administradores podem apagar qualquer recado.'
       ]))+
