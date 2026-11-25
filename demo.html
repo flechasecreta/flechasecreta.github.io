@@ -177,7 +177,15 @@ function informarVisivel(fonte, origem) {
   try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top }, origem); } catch (e) {}
   dg('visivel', Math.round(topoV - r.top) + '..' + Math.round(topoV + altV - r.top));
 }
-function tecladoAberto() { var v = window.visualViewport; return !!(v && v.height < window.innerHeight - 120); }
+/* No iPhone (app instalado), o próprio window.innerHeight encolhe junto com o teclado, às vezes antes do aviso de
+   mudança de tamanho. Comparar com ele fazia o portal achar que o teclado estava fechado e puxar a tela de volta
+   para o alto, escondendo o campo atrás do teclado (visto no diagnóstico de 25/11/2026). Por isso a comparação é
+   com a maior altura já vista nesta posição do aparelho. */
+var altCheia = 0;
+function alturaCheia() { var v = window.visualViewport; altCheia = Math.max(altCheia, window.innerHeight || 0, v ? v.height : 0); return altCheia; }
+alturaCheia();
+window.addEventListener('orientationchange', function () { altCheia = 0; });
+function tecladoAberto() { var v = window.visualViewport; return !!(v && v.height < alturaCheia() - 120); }
 function voltarAoTopo() {
   if (tecladoAberto()) { dg('topo-nao'); return; }
   if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) { dg('TOPO!'); window.scrollTo(0, 0); } else dg('topo-ok');
