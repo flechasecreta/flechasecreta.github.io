@@ -197,6 +197,12 @@ a.lk:focus-visible{outline:2px solid var(--palha);outline-offset:2px;border-radi
 .bolha.marcada{outline:2px solid var(--palha);outline-offset:2px}
 .compor-wrap{position:sticky;bottom:calc(64px + var(--sab));background:var(--fundo);padding-top:6px}
 .compor-wrap .compor{position:static;padding-top:4px}
+/* teclado aberto no iPhone (a página de entrada encolhe o app para a área visível): sem barra de abas, campo colado no fim */
+body.tecl .abas{display:none}
+body.tecl main{padding-bottom:0}
+body.tecl .compor-wrap{bottom:0}
+/* mensagem ou recado que ainda está indo para o servidor */
+.bolha.enviando,.post.enviando{opacity:.72}
 .compor-wrap .citacao{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;margin-top:0}
 .dica-chat{font-size:12.5px;color:var(--tinta-2);text-align:center;margin-top:6px}
 .acoes-msg{display:grid;gap:8px}
@@ -2521,6 +2527,7 @@ document.addEventListener('click', avisarFoco, true);
 /* a página de entrada informa qual faixa do app está visível acima do teclado; o campo em foco é rolado para dentro dela */
 window.addEventListener('message', function(ev){
   if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='visivel') return;
+  marcarTeclado(ev.data.teclado===true);
   var el=focoAtual; if(!el || document.activeElement!==el) return;
   var cobre=window.innerHeight-ev.data.ate;   // quanto do app o teclado cobre
   // campo dentro de uma janela (ex.: pedido de senha): sobe a janela inteira para cima do teclado
@@ -2541,6 +2548,18 @@ window.addEventListener('message', function(ev){
   if(r.bottom > base) window.scrollBy({top:Math.min(r.bottom-base, r.top-topo), behavior:'smooth'});
   else if(r.top < topo) window.scrollBy({top:r.top-topo, behavior:'smooth'});
 });
+/* Quando a página de entrada encolhe o app para caber acima do teclado (e quando solta), a conversa aberta continua
+   mostrando as últimas mensagens: se estava no fim, fica no fim. */
+var noFim=true;
+function estaNoFim(){ return window.innerHeight+window.scrollY >= document.body.scrollHeight-80; }
+window.addEventListener('scroll', function(){ noFim=estaNoFim(); }, {passive:true});
+function manterFim(){ if(noFim && document.getElementById('chat')) window.scrollTo(0, document.body.scrollHeight); }
+window.addEventListener('resize', manterFim);
+function marcarTeclado(sim){
+  if(document.body.classList.contains('tecl')===sim) return;
+  document.body.classList.toggle('tecl', sim); manterFim();
+}
+document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)) marcarTeclado(false); }, 300); });
 document.addEventListener('focusout', function(){ setTimeout(function(){ if(!ehCampo(document.activeElement)){ var mn=document.querySelector('main'); if(mn) mn.style.paddingBottom=''; $$('.modal-fundo').forEach(function(f){ f.style.paddingBottom=''; if(f.firstElementChild) f.firstElementChild.style.maxHeight=''; }); } }, 300); });
 document.addEventListener('focusout', function(){ if(VIA_PORTAL) setTimeout(function(){ try{ window.top.postMessage({flecha:'teclado'}, PORTAL); }catch(e){} }, 80); });
 function conectarPortal(pronto){
@@ -2761,7 +2780,7 @@ function anexador(cfg){
   cfg.caixa.addEventListener('click', function(ev){ if(ev.target.closest('[data-tirar]')){ atual=null; mostrar(); } });
   cfg.botao.onclick=function(){ try{ cfg.campo.blur(); }catch(e){} escolherFoto(receber); };   // fecha o teclado antes de abrir a janela
   cfg.campo.addEventListener('paste', function(ev){ var arq=imagemColada(ev); if(arq){ ev.preventDefault(); receber(arq); } });
-  return { pegar:function(){ return atual; }, preparando:function(){ return preparando; }, limpar:function(){ atual=null; mostrar(); }, atualizar:mostrar };
+  return { pegar:function(){ return atual; }, preparando:function(){ return preparando; }, limpar:function(){ atual=null; mostrar(); }, repor:function(f){ atual=f; mostrar(); }, atualizar:mostrar };
 }
 function htmlImagem(img){
   if(!img) return '';
@@ -2789,6 +2808,7 @@ function moeda(v){ v=String(v||'').trim(); if(!v) return 'a definir'; return 'R$
 var S = { token:null, eu:null, gid:null, g:null, aba:'amigo', conv:null };
 function chamar(nome, args){
   args = args || {}; if(S.token && !args.token) args.token = S.token;
+  if(window.__TESTE_FALHA__===nome) return Promise.reject(new Error('Falha de conexão. Tente novamente.'));   // só para os testes automáticos
   return new Promise(function(res, rej){
     function trata(r){ if(typeof r==='string') r=JSON.parse(r); if(r.erro){ if(/sessão expirou/.test(r.erro)){ sair(true); } rej(new Error(r.erro)); } else res(r.ok); }
     if(GAS){ google.script.run.withSuccessHandler(trata).withFailureHandler(function(e){ rej(new Error('Falha de conexão. Tente novamente.')); }).api(nome, args); }
@@ -3476,7 +3496,7 @@ function abrirNovaMensagem(atalhos){
   });
 }
 function abrirConversa(c, id){
-  var resp=null, ultimo=null, avisado=false, anexo=null, chatHtml=null;
+  var resp=null, ultimo=null, avisado=false, anexo=null, chatHtml=null, pend=[];   // pend: mensagens ainda a caminho do servidor
   function citacaoHTML(r){ return r? (r.apagada? '<div class="citacao">Respondendo a uma mensagem apagada</div>' : '<div class="citacao">'+esc(r.autor)+': “'+esc(r.texto)+'”</div>') : ''; }
   function mostrarResp(){
     var box=$('#cv-resp'); if(!box) return;
@@ -3498,7 +3518,20 @@ function abrirConversa(c, id){
   function enviar(txt, b){
     var t=$('#cv-t'), ft=anexo.pegar(), args={grupoId:S.gid, conversaId:id, texto:txt, respostaA:resp||''};
     if(ft){ args.imagem=ft.imagem; args.miniatura=ft.miniatura; }
-    return ocupado(b, function(){ return chamar('enviarMensagem',args).then(function(d2){ t.value=''; if(t._ajusta) t._ajusta(); resp=null; mostrarResp(); lembrarMini(d2.itens, ft); anexo.limpar(); desenhar(d2, false, true); }); });
+    // a mensagem aparece NA HORA no fim da conversa, marcada "enviando…", e o campo esvazia; quando o servidor responde, a lista
+    // verdadeira toma o lugar. Se o envio falhar, o texto (e a foto) voltam para o campo.
+    if(b.disabled) return;   // já há um envio em andamento
+    var respAntes=resp, el=document.createElement('div'), chat=$('#chat');
+    el.className='bolha minha enviando';
+    el.innerHTML=(ft? '<div class="msg-img" style="cursor:default"><img src="'+esc(ft.miniatura)+'" alt="Foto"></div>' : '')+linkar(txt)+'<div class="meta">enviando…</div>';
+    pend.push(el); if(chat) chat.appendChild(el);
+    t.value=''; if(t._ajusta) t._ajusta(); resp=null; mostrarResp(); anexo.limpar();
+    window.scrollTo(0, document.body.scrollHeight);
+    function tirar(){ pend=pend.filter(function(k){ return k!==el; }); if(el.parentNode) el.parentNode.removeChild(el); }
+    return ocupado(b, function(){ return chamar('enviarMensagem',args).then(function(d2){ tirar(); lembrarMini(d2.itens, ft); if($('#chat')) desenhar(d2, false, true); },
+      function(e){ tirar();
+        if(document.body.contains(t)){ if(!t.value){ t.value=txt; if(t._ajusta) t._ajusta(); } if(ft && !anexo.pegar() && !anexo.preparando()) anexo.repor(ft); if(!resp){ resp=respAntes; mostrarResp(); } }
+        throw e; }); });
   }
   function desenhar(d, primeira, rolar){
     ultimo=d;
@@ -3524,7 +3557,7 @@ function abrirConversa(c, id){
     }
     var embaixo = primeira || rolar || (window.innerHeight+window.scrollY >= document.body.scrollHeight-80);
     var hc = d.itens.length? d.itens.map(function(m){ return '<div class="bolha'+(m.minha?' minha':'')+'" data-m="'+esc(m.id)+'" role="button" tabindex="0">'+citacaoHTML(m.resposta)+htmlImagem(m.img)+linkar(m.texto)+'<div class="meta">'+esc(m.autor)+' · '+quando(m.em)+(m.editado?' · editada':'')+'</div></div>'; }).join('') : '<div class="faixa info">Nenhuma mensagem ainda. '+(d.icone==='alvo'?'Seu amigo não saberá que é você.':d.icone==='presente'?'Quem tirou você está do outro lado, em segredo.':'')+'</div>';
-    if(hc!==chatHtml){ chat.innerHTML=hc; chatHtml=hc; }   // só redesenha quando mudou (as fotos não piscam a cada atualização)
+    if(hc!==chatHtml){ chat.innerHTML=hc; chatHtml=hc; pend.forEach(function(k){ chat.appendChild(k); }); }   // só redesenha quando mudou (as fotos não piscam a cada atualização); as que estão a caminho continuam no fim
     if(d.itens.length) marcarVisto(id, d.itens[d.itens.length-1].em);
     if(embaixo) window.scrollTo(0, document.body.scrollHeight);
   }
@@ -3562,7 +3595,25 @@ function abaMural(c, fresco){
     $$('[data-resp]',c).forEach(function(b){ b.onclick=function(){ resp=b.dataset.resp; mostrarResp(); window.scrollTo({top:0, behavior:'smooth'}); setTimeout(function(){ $('#mu-t',c).focus(); }, 300); }; });
     $('#mu-f',c).onsubmit=function(ev){ ev.preventDefault(); var t=$('#mu-t',c).value.trim(), ft=anexo.pegar(); if(anexo.preparando()) return aviso('Aguarde um instante: a foto ainda está sendo preparada.'); if(!t && !ft) return;
       var args={grupoId:S.gid, texto:t, anonimo:anon, respostaA:resp||''}; if(ft){ args.imagem=ft.imagem; args.miniatura=ft.miniatura; }
-      ocupado($('#mu-pub',c), function(){ return chamar('publicarMural',args).then(function(ps2){ lembrarMini(ps2, ft); abaMural(c, true); aviso(resp?'Resposta publicada.':'Publicado.'); }); }); };
+      var bp=$('#mu-pub',c), campo=$('#mu-t',c), lista=$('#mu-l',c), seq=seqAba, eraResp=resp; if(bp.disabled) return;
+      // o recado aparece NA HORA no alto da lista, marcado "publicando…", e o campo esvazia. A resposta do servidor já traz o
+      // mural inteiro: ele é desenhado direto, sem uma segunda consulta. Se falhar, o texto (e a foto) voltam para o campo.
+      var el=document.createElement('div'), meuNome=(S.eu&&S.eu.nome)||'Você';
+      el.className='cartao post enviando';
+      el.innerHTML=(anon? avatarIcone('mascara') : avatar(S.eu&&S.eu.foto, meuNome))+'<div class="corpo"><div class="linha-acoes" style="justify-content:space-between"><b>'+esc(anon?'Anônimo':meuNome)+'</b><span class="muted" style="font-size:12px">publicando…</span></div>'+
+        '<div class="texto">'+linkar(t)+'</div>'+(ft? '<div class="msg-img" style="cursor:default"><img src="'+esc(ft.miniatura)+'" alt="Foto"></div>' : '')+'</div>';
+      lista.insertBefore(el, lista.firstChild);
+      campo.value=''; if(campo._ajusta) campo._ajusta(); anexo.limpar(); mexeu=false; resp=null; mostrarResp();
+      function tirar(){ if(el.parentNode) el.parentNode.removeChild(el); }
+      ocupado(bp, function(){ return chamar('publicarMural',args).then(function(ps2){ lembrarMini(ps2, ft);
+          CACHE[ch]={d:ps2, j:JSON.stringify(ps2)}; guardarCache();
+          if(seq!==seqAba){ tirar(); return; }   // a pessoa já saiu do mural: fica só guardado para a próxima vez
+          var cp=$('#mu-t'), ax=$('#mu-anexo');
+          if(cp && (cp.value || document.activeElement===cp || (ax && !ax.hidden))){   // já está escrevendo outro recado: não mexe no campo
+            el.classList.remove('enviando'); var q=el.querySelector('.muted'); if(q) q.textContent='agora'; }
+          else abaMural(c);
+          aviso(eraResp?'Resposta publicada.':'Publicado.'); },
+        function(e){ tirar(); if(document.body.contains(campo)){ if(!campo.value){ campo.value=t; if(campo._ajusta) campo._ajusta(); } if(ft && !anexo.pegar() && !anexo.preparando()) anexo.repor(ft); if(!resp && eraResp){ resp=eraResp; mostrarResp(); } } throw e; }); }); };
     autoCrescer($('#mu-t',c));
     $$('[data-ed]',c).forEach(function(b){ b.onclick=function(){ var p=porId[b.dataset.ed];
       if(Date.now()-new Date(p.em).getTime() > 10*60*1000) return aviso('O prazo para editar acabou (10 minutos).', true);

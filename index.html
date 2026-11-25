@@ -170,12 +170,36 @@ function abrirLink(u) {
    para mostrar o campo que está sendo digitado. */
 var appFonte = null, appOrigem = '';
 /* sempre que o teclado abre ou fecha, o app fica sabendo qual parte dele está visível */
-if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { if (appFonte) informarVisivel(appFonte, appOrigem); });
+function aoMudarVisivel() { ajustarAoTeclado(); if (appFonte) informarVisivel(appFonte, appOrigem); }
+if (window.visualViewport) { window.visualViewport.addEventListener('resize', aoMudarVisivel); window.visualViewport.addEventListener('scroll', aoMudarVisivel); }
+window.addEventListener('scroll', function () { if (encolhido) aoMudarVisivel(); });
 function informarVisivel(fonte, origem) {
+  ajustarAoTeclado();
   var v = window.visualViewport, r = frame.getBoundingClientRect();
   var topoV = v ? v.offsetTop : 0, altV = v ? v.height : window.innerHeight;
-  try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top }, origem); } catch (e) {}
-  dg('visivel', Math.round(topoV - r.top) + '..' + Math.round(topoV + altV - r.top));
+  // "teclado: true" = o app está encolhido na área visível (ele esconde a barra de abas e cola o campo no fim)
+  try { fonte.postMessage({ flecha: 'visivel', de: topoV - r.top, ate: topoV + altV - r.top, teclado: encolhido }, origem); } catch (e) {}
+  dg('visivel', Math.round(topoV - r.top) + '..' + Math.round(topoV + altV - r.top) + (encolhido ? ' enc' : ''));
+}
+/* Com o teclado aberto, o app passa a ocupar SÓ a área visível acima do teclado, e a página fica parada no alto.
+   Assim o cabeçalho continua no lugar e o campo fica logo acima do teclado, sem o iPhone empurrar a página inteira
+   (que fazia o cabeçalho sumir e deixava um vão vazio). Se o iPhone insistir em deslizar a página, desiste nesta
+   abertura do teclado e volta ao jeito antigo (app em altura cheia, o iPhone desliza a tela). */
+var encolhido = false, puxadas = 0, desistiu = false;
+function ajustarAoTeclado() {
+  var v = window.visualViewport; if (!v) return;
+  if (!tecladoAberto()) {
+    if (encolhido) { encolhido = false; frame.style.height = ''; frame.style.bottom = ''; dg('SOLTA'); }
+    puxadas = 0; desistiu = false; return;
+  }
+  if (desistiu) return;
+  var alt = Math.max(160, Math.round(v.height - margens().topo)) + 'px';
+  if (frame.style.height !== alt) { frame.style.height = alt; frame.style.bottom = 'auto'; dg('ENCOLHE', alt); }
+  encolhido = true;
+  if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) {
+    if (++puxadas > 8) { desistiu = true; encolhido = false; frame.style.height = ''; frame.style.bottom = ''; dg('DESISTE'); return; }
+    dg('sobe', puxadas); window.scrollTo(0, 0);
+  }
 }
 /* No iPhone (app instalado), o próprio window.innerHeight encolhe junto com o teclado, às vezes antes do aviso de
    mudança de tamanho. Comparar com ele fazia o portal achar que o teclado estava fechado e puxar a tela de volta
