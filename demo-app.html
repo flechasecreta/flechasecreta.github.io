@@ -202,7 +202,7 @@ a.lk:focus-visible{outline:2px solid var(--palha);outline-offset:2px;border-radi
 .acoes-msg{display:grid;gap:8px}
 .acoes-msg .previa{background:var(--suave);border-radius:12px;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;max-height:30vh;overflow:auto}
 /* fotos nas mensagens: miniatura no balão, prévia antes de enviar e foto ampliada */
-.msg-img{display:block;border:0;padding:0;margin:0 0 6px;background:var(--suave);border-radius:10px;overflow:hidden;cursor:zoom-in;width:min(240px,100%);max-height:320px;color:var(--tinta-2);font-size:12.5px}
+.msg-img{display:block;border:0;padding:0;margin:0 0 6px;background:var(--suave);border-radius:10px;overflow:hidden;cursor:zoom-in;width:min(150px,100%);max-height:190px;color:var(--tinta-2);font-size:12.5px}
 .msg-img img{display:block;width:100%;height:100%;object-fit:cover}
 .msg-img.sumiu{cursor:default;display:grid;place-items:center;aspect-ratio:auto!important;padding:14px 10px;width:auto}
 .bolha.minha .msg-img{background:color-mix(in srgb,#000 22%,transparent);color:var(--sobre-mata)}
@@ -1312,7 +1312,7 @@ var Core = (function () {
      só aceita JPEG, percorre a estrutura do arquivo e JOGA FORA qualquer bloco de metadados (EXIF, XMP, comentários,
      miniatura embutida e tudo o que vier depois do fim da imagem). Depois cifra e guarda fora da planilha (P.imgGuardar);
      dentro da mensagem cifrada fica só a referência. Nada no arquivo guardado diz quem enviou nem de que conversa é. */
-  var IMG_MAX = 620000, MINI_MAX = 90000, IMG_LADO_MAX = 2600, IMG_POR_MINUTO = 5;   // tamanhos em caracteres de base64
+  var IMG_MAX = 1100000, MINI_MAX = 110000, IMG_LADO_MAX = 2600, IMG_POR_MINUTO = 5;   // tamanhos em caracteres de base64
   function limparJpeg(b) {
     var n = b.length, i = 2, partes = [[0xFF, 0xD8]], l = 0, a = 0, temQuadro = false, temVarredura = false;
     if (n < 100 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
@@ -2395,7 +2395,7 @@ var DEMO = (function () {
   }
   /* Imagens das mensagens: na demonstração ficam neste navegador (no lugar da pasta do Google Drive), já cifradas.
      Guardadas à parte dos outros dados e só as mais recentes, para não encher a memória do navegador. */
-  var CHAVE_IMG = CHAVE_LS + '-img', imgs = null, IMG_LIMITE = 1800000;
+  var CHAVE_IMG = CHAVE_LS + '-img', imgs = null, IMG_LIMITE = 3200000;
   function lerImgs() { if (!imgs) { try { imgs = JSON.parse(localStorage.getItem(CHAVE_IMG) || '{}') || {}; } catch (e) { imgs = {}; } } return imgs; }
   function salvarImgs() {
     var o = lerImgs(), ks = Object.keys(o), j = JSON.stringify(o);
@@ -2697,16 +2697,16 @@ var IMG_CHEIA={};   // fotos em tamanho grande já baixadas: só na memória, nu
 /* Reduz e recomprime a imagem NO APARELHO antes de enviar. Redesenhar num canvas e gerar um JPEG novo também
    descarta os metadados do arquivo original (EXIF, GPS, modelo do celular): obrigatório para o anonimato. */
 function reduzirImagem(img, lado, maxLetras){
-  var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height, q=0.82, url;
+  var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height, q=0.9, url;
   if(!w || !h) throw new Error('vazia');
   for(var t=0;t<12;t++){
     var e=Math.min(1, lado/Math.max(w,h)), cw=Math.max(1,Math.round(w*e)), ch=Math.max(1,Math.round(h*e));
     var c=document.createElement('canvas'); c.width=cw; c.height=ch;
-    var cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cw,ch); cx.drawImage(img,0,0,w,h,0,0,cw,ch);
+    var cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cw,ch); cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality='high'; cx.drawImage(img,0,0,w,h,0,0,cw,ch);
     url=c.toDataURL('image/jpeg', q);
     if(url.indexOf('data:image/jpeg;base64,')!==0) throw new Error('formato');
     if(url.length<=maxLetras) return url;
-    q-=0.12; if(q<0.5){ q=0.76; lado=Math.round(lado*0.8); }
+    q-=0.06; if(q<0.72){ q=0.86; lado=Math.round(lado*0.85); }   // nunca abaixo de ~72%: é aí que aparece o reticulado
   }
   throw new Error('grande');
 }
@@ -2717,7 +2717,8 @@ function prepararFoto(arq){
     var u=URL.createObjectURL(arq), img=new Image();
     img.onload=function(){
       // na demonstração as imagens ficam no próprio navegador: vão menores
-      try{ res({ imagem:reduzirImagem(img, MODO_DEMO?960:1280, MODO_DEMO?130000:400000), miniatura:reduzirImagem(img, 360, 40000) }); }
+      // foto grande: lado maior 1600 px, até ~600 KB; miniatura: 480 px (fica nítida mesmo em tela de alta resolução)
+      try{ res({ imagem:reduzirImagem(img, MODO_DEMO?1280:1600, MODO_DEMO?330000:800000), miniatura:reduzirImagem(img, 480, 70000) }); }
       catch(e){ rej(new Error('Não consegui preparar esta imagem. Tente outra foto.')); }
       URL.revokeObjectURL(u);
     };
