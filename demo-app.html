@@ -145,6 +145,12 @@ main{padding-bottom:calc(90px + var(--sab))}
 .grupo-p .sel-p{font-weight:400;font-size:12.5px;color:var(--mata-2);order:3;flex-basis:100%}
 .grupo-p .sel-p:empty{display:none}
 .grupo-p .chips-p{padding-bottom:12px;margin-top:0}
+.ideias .ideia{border-top:1px solid var(--linha);padding:10px 0}
+.ideias .ideia:first-child{border-top:0}
+.ideia-t{font-weight:700;display:flex;gap:8px;align-items:flex-start}
+.ideia-t .num{flex:none;width:22px;height:22px;border-radius:50%;background:var(--palha);color:#fff;text-align:center;font-size:12.5px;line-height:22px}
+.ideia-p{color:var(--mata-2);font-weight:600;font-size:13px;margin:2px 0 2px 30px}
+.ideias .ideia .muted{margin-left:30px}
 .faixa-ia{background:#fff7e6;border:1px solid #ecd3a1;border-radius:12px;padding:10px 12px;font-size:13px;color:#6b4a10}
 .tab-desemp{display:grid;font-size:13.5px;border:1px solid var(--linha);border-radius:12px;overflow:hidden;background:var(--cartao)}
 .tab-desemp>div{display:grid;grid-template-columns:minmax(0,1fr) 40px 56px 56px 56px;gap:6px;padding:7px 10px;border-top:1px solid var(--linha);align-items:center}
@@ -1370,6 +1376,56 @@ var Core = (function () {
   function passeDe(a, cid) { return (a && (a.passe || (a.passes && a.passes[cid]))) || ''; }
   function liberada(u, c, a) { return !conversaProtegida(c, u) || passeVale(u, c.id, passeDe(a, c.id)); }
   function exigirPasse(u, c, a) { if (!liberada(u, c, a)) erro('Esta conversa está protegida pela sua senha.'); }
+  /* ---------- Ideias de presente com IA (Gemini, plano gratuito; 26/11/2026) ----------
+     Decisão do Aloísio, ciente dos termos do plano gratuito (o Google usa o texto para melhorar produtos, com revisão humana).
+     Por isso: a IA recebe só o valor mínimo, o perfil para presentes e a lista de desejos do amigo — NUNCA nomes, e-mails, fotos,
+     nem as alergias/restrições (vai só um aviso genérico). Só quem tirou pede, com a mesma proteção pela senha; nada é guardado. */
+  var IA_POR_DIA = 5;
+  function pedidoIA(g, perfil, desejos, outras) {
+    var p = perfil, l = ['Estou participando de um amigo secreto em família, no Natal, no Brasil. Sugira de 6 a 8 ideias de presente para a pessoa que eu tirei.'];
+    var ou = function (v) { return v.length < 2 ? (v[0] || '') : v.slice(0, -1).join(', ') + ' ou ' + v[v.length - 1]; };
+    var med = [p.camisa.length ? 'camisa ' + ou(p.camisa) : '', p.calca.length ? 'calça ' + ou(p.calca) : '', p.calcado.length ? 'calçado ' + ou(p.calcado) : '', p.medidas].filter(Boolean).join('; ');
+    if (g.valorMinimo) l.push('Valor mínimo combinado: R$ ' + g.valorMinimo + ' (pode passar um pouco, mas não muito).');
+    if (p.idade) l.push('Faixa de idade: ' + IDADES_PRESENTE[p.idade] + '.');
+    if (p.estilo.length) l.push('Estilo de presente que a pessoa prefere: ' + ou(p.estilo).toLowerCase() + '.');
+    if (med) l.push('Medidas: ' + med + '.');
+    if (p.gostos.length) l.push('Gosta de: ' + p.gostos.join(', ').toLowerCase() + '.');
+    if (p.detalhes) l.push('Mais sobre os gostos: ' + p.detalhes);
+    if (p.precisa) l.push('Está precisando de: ' + p.precisa);
+    if (p.evitar) l.push('Não gosta ou já tem: ' + p.evitar);
+    if (p.restricoes) l.push('A pessoa tem alguma restrição (alergia ou algo que não consome): não sugira comidas, bebidas nem cosméticos.');
+    if (desejos) l.push('O que a pessoa disse que gostaria de ganhar: ' + desejos + ' (comece por estas ideias).');
+    if (outras && outras.length) l.push('Já recebi estas ideias, não repita: ' + outras.join('; ') + '.');
+    l.push('Responda SOMENTE com JSON, sem nenhum texto fora dele, neste formato: {"ideias":[{"titulo":"nome curto do presente","preco":"faixa de preço em reais, ex.: R$ 120 a 200","onde":"onde costuma ser encontrado no Brasil","porque":"uma frase dizendo por que combina"}]}');
+    return l.join('\n');
+  }
+  function lerIdeias(txt) {
+    var s = String(txt || '').replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim(), d = null;
+    try { d = JSON.parse(s); } catch (e) { var m = s.match(/\{[\s\S]*\}/); if (m) try { d = JSON.parse(m[0]); } catch (e2) { d = null; } }
+    var corta = function (v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().substr(0, n); };
+    var lista = (d && (d.ideias || d.ideas)) || (Array.isArray(d) ? d : []);
+    return lista.filter(function (x) { return x && typeof x === 'object' && x.titulo; }).slice(0, 8).map(function (x) {
+      return { titulo: corta(x.titulo, 90), preco: corta(x.preco, 40), onde: corta(x.onde, 90), porque: corta(x.porque, 240) };
+    });
+  }
+  api.ideiasPresente = function (a) {
+    var u = sessao(a.token), x = exigirMembro(u, a.grupoId);
+    exigirParticipante(x);
+    if (a.aceito !== true) erro('Para usar as ideias com IA, marque que você leu o aviso.');
+    var d = x.g.sorteioEm ? ordemSorteio(x.g.id) : null; if (!d) erro('As ideias aparecem depois do sorteio.');
+    var i = d.ordem.indexOf(u.email); if (i < 0) erro('Você não participou deste sorteio.');
+    // mesma proteção do nome do amigo: com a proteção ligada, só depois da senha (o passe da conversa com o amigo)
+    var ca = conversasDoGrupo(x.g.id).filter(function (c) { return c.tipo === 'amigo' && c.a === u.email; })[0];
+    if (protegido(u) && !(ca && passeVale(u, ca.id, passeDe(a, ca.id)))) erro('Para ver as ideias, digite antes a sua senha em "Ver meu amigo".');
+    if (!P.ia || (P.iaAtiva && !P.iaAtiva())) erro('As ideias com IA ainda não foram ativadas. Use "Copiar o pedido para outra IA".');
+    var alvo = d.ordem[(i + 1) % d.ordem.length], perfil = perfilPresente(usuario(alvo) || {}), mm = membro(x.g.id, alvo) || {};
+    var usados = P.contar ? P.contar('ia:' + Cripto.idPush(u.email) + ':' + hoje(), 90000) : 1;
+    if (usados > IA_POR_DIA) erro('Você já pediu ideias ' + IA_POR_DIA + ' vezes hoje. Amanhã tem mais — ou use "Copiar o pedido para outra IA".');
+    var outras = [].concat(a.outras || []).map(function (t) { return String(t).substr(0, 90); }).slice(0, 16);
+    var ideias = lerIdeias(P.ia(pedidoIA(x.g, perfil, String(mm.desejos || '').substr(0, 800), outras)));
+    if (!ideias.length) erro('A IA não respondeu direito desta vez. Tente de novo em instantes.');
+    return { ideias: ideias, restantes: Math.max(0, IA_POR_DIA - usados) };
+  };
   api.liberarConversa = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), c = exigirConversa(u, x.g.id, a.conversaId);
     conferirSenha(u, a.senha);
@@ -2440,7 +2496,7 @@ var Core = (function () {
     // campos que começam com "_" são marcas internas do servidor (ex.: _liberado, depois de conferida a senha): nunca valem vindos do aparelho
     if (args && typeof args === 'object') Object.keys(args).forEach(function (k) { if (k.charAt(0) === '_') delete args[k]; });
     try {
-      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|imagem|statusAvisos|desempenho)$/.test(nome);
+      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|imagem|statusAvisos|desempenho|ideiasPresente)$/.test(nome);
       var r = escrita && P.travar ? P.travar(function () { return api[nome](args || {}); }) : api[nome](args || {});
       return { ok: nome === 'fotos' || nome === 'imagem' ? r : trocarFotos(r) };
     } catch (e) {
@@ -2559,6 +2615,22 @@ var P = {
   urlApp: function () { return 'https://flecha-secreta.demo/'; },
   emailDe: function (nome) { var c = (typeof window !== 'undefined' && window.DEMO_CONFIG); return nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase() + '@' + (c ? c.dominio : 'familia.demo'); },
   telegramBot: function () { return 'FlechaSecretaBot'; },
+  contar: (function () { var n = {}; return function (k) { n[k] = (n[k] || 0) + 1; return n[k]; }; })(),
+  /* Demonstração: não chama o Gemini de verdade; devolve ideias de exemplo, usando o que o pedido diz que a pessoa gosta */
+  ia: function (texto) {
+    var gosta = (String(texto).match(/Gosta de: ([^.\n]+)/) || [])[1] || '', primeiro = gosta.split(',')[0].trim();
+    var precisa = (String(texto).match(/Está precisando de: ([^\n]+)/) || [])[1] || '';
+    var base = [
+      primeiro ? { titulo: 'Kit para quem gosta de ' + primeiro, preco: 'R$ 100 a 180', onde: 'lojas especializadas e sites', porque: 'Combina com um dos gostos marcados no perfil.' } : null,
+      precisa ? { titulo: precisa.split(',')[0].trim().replace(/^./, function (c) { return c.toUpperCase(); }) + ' de boa qualidade', preco: 'R$ 90 a 200', onde: 'lojas de departamento', porque: 'A pessoa disse que está precisando.' } : null,
+      { titulo: 'Caneca térmica com tampa', preco: 'R$ 80 a 150', onde: 'lojas de casa e sites', porque: 'Útil no dia a dia e agrada quase todo mundo.' },
+      { titulo: 'Vale-presente de livraria', preco: 'R$ 100', onde: 'livrarias', porque: 'A pessoa escolhe o que quiser.' },
+      { titulo: 'Kit de chás e cafés especiais', preco: 'R$ 90 a 160', onde: 'empórios e sites', porque: 'Presente gostoso e fácil de acertar.' },
+      { titulo: 'Manta de sofá macia', preco: 'R$ 110 a 190', onde: 'lojas de cama, mesa e banho', porque: 'Aconchego para as noites de filme.' }
+    ].filter(Boolean);
+    if (/não repita/.test(texto)) base.reverse();
+    return JSON.stringify({ ideias: base });
+  },
   umaVez: (function () { var vistos = {}; return function (k, seg) { var t = Date.now(); if (vistos[k] && t - vistos[k] < seg * 1000) return false; vistos[k] = t; return true; }; })(),
   /* na demonstração, todo pedido pendente é tratado como se a pessoa tivesse tocado em Iniciar no Telegram */
   telegramAtualizacoes: function () {
@@ -3493,12 +3565,12 @@ function revelarAmigo(a){
     (a.perfil? '<div class="desejos" id="bil-perfil"><div class="rotulo" style="margin-bottom:4px">Perfil para presentes</div>'+
       (function(p){ return [['Idade',p.idade],['Estilo',ouLista(p.estilo||[]).toLowerCase()],['Medidas',medidasTexto(p)],['Gosta de',[(p.gostos||[]).join(', ').toLowerCase(), p.detalhes].filter(Boolean).join('. ')],
         ['Precisando de',p.precisa],['Evitar',p.evitar],['Alergias e restrições',p.restricoes]].filter(function(x){ return x[1]; }).map(function(x){ return '<div><b>'+x[0]+':</b> '+esc(x[1])+'</div>'; }).join(''); })(a.perfil)+'</div>' : '')+
-    '<button class="btn sec peq" id="bil-ia" style="margin-top:12px;background:transparent;color:#fff;border-color:rgba(255,255,255,.55)">💡 Pedir ideias de presente à IA</button>'+
+    '<button class="btn sec peq" id="bil-ia" style="margin-top:12px;background:transparent;color:#fff;border-color:rgba(255,255,255,.55)">💡 Ideias de presente com IA</button>'+
     '<div class="linha-acoes" style="margin-top:14px"><button class="btn" data-ir="amigo">'+I.balao+'Conversar com meu amigo</button><button class="btn mata" data-ir="tirou">'+I.presente+'Falar com quem me tirou</button></div>'+
     '<div style="font-size:12px;opacity:.7;margin-top:10px">Some sozinho em 20 segundos.</div>';
   $('#bil-c').hidden=true; r.hidden=false;
   $('#bil-esc').onclick=esconderAmigo;
-  $('#bil-ia').onclick=function(){ janelaIdeias(a); };
+  $('#bil-ia').onclick=function(){ janelaIdeiasIA(a); };
   $$('[data-ir]', r).forEach(function(b){ b.onclick=function(){ esconderAmigo(); chamar('conversas',{grupoId:S.gid}).then(function(cs){ var alvo=cs.filter(function(k){ return k.tipo==='amigo' && (b.dataset.ir==='amigo'? k.ordem===0 : k.ordem===1); })[0]; if(alvo){ S.conv=alvo.id; mostrarAba('conversas'); } }).catch(falha); }; });
   clearTimeout(tEsconder); tEsconder=setTimeout(esconderAmigo, 20000);
 }
@@ -3945,7 +4017,7 @@ function abaAjuda(c){
         '<b>Proteção pela senha:</b> o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Ela já vem ligada para todos, para que ninguém que pegue o seu celular descubra o seu amigo secreto. Quem preferir pode desligar no <b>Perfil</b> (também com a senha).',
         'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você. '+
         'No <b>Perfil</b>, o <b>Perfil para presentes</b> (opcional: idade, medidas, do que você gosta, o que está precisando e o que é melhor evitar) aparece só para quem tirou você.'+
-        'Ao ver o seu amigo secreto, o botão <b>Pedir ideias de presente à IA</b> monta um pedido pronto, sem nomes, para colar no aplicativo de IA que você usa.'
+        'Ao ver o seu amigo secreto, o botão <b>Ideias de presente com IA</b> pede sugestões à IA Gemini, do Google (plano gratuito), usando só o valor mínimo e o perfil para presentes — nunca nomes, fotos nem alergias. Até 5 pedidos por dia; também dá para copiar o pedido e colar em outra IA.'
       ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
       bloco('balao','Conversas', lst([
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
@@ -4080,7 +4152,7 @@ function secaoPerfilPresente(p){
     '<div class="rotulo-p">4. Estou precisando de…</div><div class="cartao pilha"><label class="campo">Coisas que estão me fazendo falta'+txt('pp-precisa','precisa',300,'Ex.: garrafa térmica, chinelo novo, carregador portátil',true)+'</label></div>'+
     '<div class="rotulo-p">5. Melhor evitar</div><div class="cartao pilha"><label class="campo">Não gosto / já tenho'+txt('pp-evitar','evitar',300,'Ex.: perfume, canecas',true)+'</label>'+
       '<label class="campo">Alergias e restrições'+txt('pp-restricoes','restricoes',200,'Ex.: não bebo álcool; alergia a amendoim')+'</label></div>'+
-    '<div class="faixa-ia">🤖 <b>Ideias com IA:</b> quem tirou você pode usar este perfil, <b>sem o seu nome</b>, para pedir ideias de presente a uma inteligência artificial (como Gemini ou Claude). <b>Alergias e restrições não vão</b> para a IA. Não escreva nada que não queira compartilhar.</div>'+
+    '<div class="faixa-ia">🤖 <b>Ideias com IA:</b> o que você escrever aqui (e na sua lista "O que eu gostaria de ganhar") pode ser enviado, <b>sem o seu nome</b>, à IA <b>Gemini, do Google</b> (plano gratuito, que pode usar o texto para melhorar os produtos dele), para sugerir presentes a quem tirou você. <b>Alergias e restrições não vão</b> para a IA. Não escreva nada que não queira compartilhar.</div>'+
     '<button class="btn">Salvar meu perfil para presentes</button></form></div>';
 }
 function lerPerfilPresente(){
@@ -4108,6 +4180,36 @@ function pedidoIdeias(a, g){
   if(!p.idade && !(p.gostos||[]).length && !p.detalhes && !med && !p.precisa && !a.desejos) l.push('Não sei nada sobre os gostos da pessoa: sugira presentes que agradam quase todo mundo e me diga que perguntas eu poderia fazer, sem me identificar, para acertar mais.');
   l.push('Para cada ideia, diga o preço aproximado em reais, onde costuma ser encontrada no Brasil e por que combina com a pessoa.'+(a.desejos? ' Comece pelas ideias que estão na lista da pessoa.' : ''));
   return l.join('\n');
+}
+/* Ideias com o Gemini, dentro do app. O aviso aparece sempre no alto; na primeira vez neste aparelho é preciso marcar "Entendi".
+   As ideias ficam só na tela (não são guardadas). */
+function janelaIdeiasIA(a){
+  var aceito=lsGet('flecha-ia-aceite')==='1', vistas=[];
+  modal('<h2>💡 Ideias de presente</h2>'+
+    '<div class="faixa-ia" id="ia-aviso">🤖 <b>Sobre estas ideias</b><br>São geradas pela IA <b>Gemini, do Google</b>, no plano gratuito. Vão só o valor mínimo, o perfil para presentes e a lista "O que eu gostaria de ganhar" do seu amigo — <b>nunca nomes, e-mails, fotos nem alergias</b>. No plano gratuito, o Google pode usar esse texto para melhorar os produtos dele, inclusive com leitura por pessoas. A IA pode errar: confira preços e lojas.'+
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:600"><input type="checkbox" id="ia-ok"'+(aceito?' checked':'')+' style="width:18px;height:18px"> Entendi</label></div>'+
+    '<div id="ia-lista"></div>'+
+    '<button class="btn" id="ia-gerar"'+(aceito?'':' disabled')+'>Gerar ideias</button>'+
+    '<div class="muted" style="font-size:12.5px;text-align:center" id="ia-rest"></div>'+
+    '<button class="link" id="ia-copia" style="font-size:13px">Copiar o pedido para outra IA</button>'+
+    '<button class="link" data-fechar style="font-size:13px">Fechar</button>', function(m, fechar){
+    var ok=$('#ia-ok',m), ger=$('#ia-gerar',m), lista=$('#ia-lista',m), rest=$('#ia-rest',m);
+    ok.onchange=function(){ ger.disabled=!ok.checked; lsSet('flecha-ia-aceite', ok.checked?'1':null); };
+    $('#ia-copia',m).onclick=function(){ fechar(); janelaIdeias(a); };
+    ger.onclick=function(){
+      if(!ok.checked) return;
+      lista.innerHTML='<div class="muted" style="text-align:center;padding:10px">Pensando em ideias… isso pode levar alguns segundos.</div>';
+      ocupado(ger, function(){
+        return chamar('ideiasPresente',{grupoId:S.gid, aceito:true, outras:vistas, passes:PASSES}).then(function(r){
+          r.ideias.forEach(function(x){ vistas.push(x.titulo); });
+          lista.innerHTML='<div class="ideias">'+r.ideias.map(function(x,i){ return '<div class="ideia"><div class="ideia-t"><span class="num">'+(i+1)+'</span>'+esc(x.titulo)+'</div>'+
+            ((x.preco||x.onde)? '<div class="ideia-p">'+esc([x.preco,x.onde].filter(Boolean).join(' · '))+'</div>' : '')+(x.porque? '<div class="muted" style="font-size:13px">'+esc(x.porque)+'</div>' : '')+'</div>'; }).join('')+'</div>';
+          rest.textContent= r.restantes? 'Você ainda pode pedir '+r.restantes+(r.restantes===1?' vez':' vezes')+' hoje.' : 'Acabaram os pedidos de hoje. Amanhã tem mais.';
+          return r;
+        }, function(e){ lista.innerHTML='<div class="faixa erro">'+esc(e.message||e)+'</div>'; return null; });
+      }).then(function(r){ if(!r) return; ger.textContent='Gerar outras ideias'; if(!r.restantes) ger.disabled=true; });
+    };
+  });
 }
 function janelaIdeias(a){
   var txt=pedidoIdeias(a, S.g);
@@ -4603,7 +4705,7 @@ function desenharCentral(c, pg){
 var NOMES_CHAMADA={_abrir:'Abrir o app (página)', eu:'Entrar / atualizar dados', grupo:'Dados do grupo', meuAmigo:'Meu amigo', revelarAmigo:'Ver o amigo (com senha)',
   conversas:'Lista de conversas', mensagens:'Abrir conversa', enviarMensagem:'Enviar mensagem', editarMensagem:'Editar mensagem', apagarMensagem:'Apagar mensagem',
   liberarConversa:'Liberar conversa (senha)', mural:'Mural', publicarMural:'Publicar no mural', apagarMural:'Apagar do mural', fotos:'Fotos (miniaturas)', imagem:'Foto grande',
-  salvarDesejos:'Salvar sugestões', compraInfo:'Compras', painelGeral:'Central', desempenho:'Desempenho', pacote:'Carregar dados do grupo', statusAvisos:'Situação dos avisos', recados:'Recados', suporte:'Suporte', info:'Tela de entrada', entrar:'Entrar (senha)'};
+  salvarDesejos:'Salvar sugestões', ideiasPresente:'Ideias de presente (IA)', salvarPerfilPresente:'Salvar perfil para presentes', compraInfo:'Compras', painelGeral:'Central', desempenho:'Desempenho', pacote:'Carregar dados do grupo', statusAvisos:'Situação dos avisos', recados:'Recados', suporte:'Suporte', info:'Tela de entrada', entrar:'Entrar (senha)'};
 function nomeChamada(n){ return NOMES_CHAMADA[n] || n; }
 function seg(ms){ return ms==null? '—' : ms<1000? ms+' ms' : (ms/1000).toFixed(1).replace('.',',')+' s'; }
 function desenharDesempenho(box, zerar){
