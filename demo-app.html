@@ -2100,7 +2100,11 @@ var Core = (function () {
     var r = { ativa: g.compraAtiva === 'sim', sorteado: !!g.sorteioEm, valor: moeda(g.compraValor), banco: g.compraBanco || '', agencia: g.compraAgencia || '', conta: g.compraConta || '', titular: g.compraTitular || '', pix: g.compraPix || '',
       status: minha ? minha.status : '', disponivel: !g.sorteioEm && vagasUsadas(g.id) < limiteCompras(g) && !fx[u.email] };
     if (g.abracoAtivo === 'sim') r.abraco = infoAbraco(g, u);
-    if (minha && minha.escolha) { var pu = usuario(minha.escolha) || {}; r.escolhido = { nome: pu.nome || '', foto: pu.foto || '' }; }
+    if (minha && minha.escolha) {
+      // a escolha comprada SERÁ o amigo secreto: com a proteção ligada, o nome só vem com a senha (api.revelarEscolha)
+      if (protegido(u) && !a._liberado) r.escolhidoProtegido = true;
+      else { var pu = usuario(minha.escolha) || {}; r.escolhido = { nome: pu.nome || '', foto: pu.foto || '' }; }
+    }
     if (!minha) {
       var ant = todasCompras(g.id).filter(function (c) { return c.tipo === 'escolha' && c.comprador === u.email && encerrada(c.status); }).sort(function (p, q) { return (p.encerradoEm || p.pedidoEm) < (q.encerradoEm || q.pedidoEm) ? 1 : -1; })[0];
       if (ant) r.anterior = { motivo: ant.motivo, devolvido: !!ant.devolvidoEm, devolvidoEm: ant.devolvidoEm, semPagamento: ant.pagamento === 'nao-recebido' };
@@ -2109,10 +2113,16 @@ var Core = (function () {
     if (g.sorteioEm) {
       // depois do sorteio a seção é só para consulta: a escolha comprada É o amigo secreto (fica na aba Amigo, protegida pela senha),
       // e os dados do PIX não servem mais
-      delete r.escolhido; delete r.opcoes; r.pix = r.banco = r.agencia = r.conta = r.titular = '';
+      delete r.escolhido; delete r.escolhidoProtegido; delete r.opcoes; r.pix = r.banco = r.agencia = r.conta = r.titular = '';
       if (r.abraco) delete r.abraco.opcoes;
     }
     return r;
+  };
+
+  /* Ver a escolha comprada (antes do sorteio), para quem tem a proteção: pede a senha, como "Ver meu amigo" */
+  api.revelarEscolha = function (a) {
+    var u = sessao(a.token); exigirMembro(u, a.grupoId); conferirSenha(u, a.senha);
+    return api.compraInfo({ token: a.token, grupoId: a.grupoId, _liberado: true });
   };
 
   function opcoesPessoas(g, excluir) {
@@ -3447,7 +3457,10 @@ function linhaCopia(rot, val){ return val? '<div style="display:flex;gap:10px;al
 function ligarCopias(r){ $$('[data-copiar]', r).forEach(function(b){ b.onclick=function(){ var t=b.dataset.copiar; try{ navigator.clipboard.writeText(t).then(function(){ aviso('Copiado.'); }, function(){ aviso(t); }); }catch(e){ aviso(t); } }; }); }
 function carregarCompra(box){
   box.innerHTML=carregando();
-  chamar('compraInfo',{grupoId:S.gid}).then(function(c){
+  chamar('compraInfo',{grupoId:S.gid}).then(function(c){ desenharCompra(box, c); }).catch(function(e){ box.innerHTML=''; falha(e); });
+}
+function desenharCompra(box, c){
+  {
     if(!c.ativa && !c.abraco){ box.remove(); return; }
     if(c.sorteado){ box.innerHTML=compraEncerrada(c); return; }
     var h='';
@@ -3459,7 +3472,9 @@ function carregarCompra(box){
         an.semPagamento? 'Seu pedido anterior foi encerrado.' :
         (an.motivo==='cancelado'? 'Você cancelou o seu pedido anterior.' : 'Seu pedido anterior não pôde ser atendido.')+' Se você já tinha feito o PIX, o administrador geral vai conferir e, comprovado o pagamento, o valor será devolvido para você.')+'</div></div>';
     }
-    if(c.status==='escolhido'){
+    if(c.status==='escolhido' && !c.escolhido){
+      h+='<div class="cartao cadeado">'+I.cadeado+'<div class="pilha" style="gap:8px"><div><b>Sua escolha comprada está protegida pela sua senha.</b><div class="muted">O sorteio vai respeitar sua escolha. Ninguém mais sabe, nem os administradores. Guarde segredo!</div></div><button class="btn sec peq" id="cp-ver" style="justify-self:start">🔒 Ver minha escolha</button></div></div>';
+    } else if(c.status==='escolhido'){
       h+='<div class="cartao revelado">'+avatar(c.escolhido.foto,c.escolhido.nome,'g')+'<div><div class="rotulo">Sua escolha comprada</div><div style="font-family:var(--f-titulo);font-size:24px">'+esc(c.escolhido.nome)+'</div><div class="muted">O sorteio vai respeitar sua escolha. Ninguém mais sabe, nem os administradores. Guarde segredo!</div></div></div>';
     } else if(c.status==='liberado'){
       h+='<div class="cartao pilha"><div><b>Pagamento confirmado!</b> Escolha quem você quer tirar. A escolha é definitiva.</div><label class="campo">Quero tirar<select class="inp" id="cp-para"><option value="">— escolher —</option>'+c.opcoes.map(function(o){ return '<option value="'+esc(o.id)+'">'+esc(o.nome)+'</option>'; }).join('')+'</select></label><button class="btn" id="cp-esc">Confirmar minha escolha</button></div>';
@@ -3488,7 +3503,11 @@ function carregarCompra(box){
         if(ok) chamar('escolher',{grupoId:S.gid, para:id}).then(function(){ aviso('Escolha registrada!'); carregarCompra(box); }).catch(falha);
       });
     };
-  }).catch(function(e){ box.innerHTML=''; falha(e); });
+    var ve=$('#cp-ver',box); if(ve) ve.onclick=function(){
+      pedirSenhaAmigo('Para ver quem você escolheu, digite sua senha do Flecha Secreta.', function(senha){ return chamar('revelarEscolha',{grupoId:S.gid, senha:senha}); })
+        .then(function(c2){ if(c2) desenharCompra(box, c2); });   // o nome fica só na tela; ao voltar à aba, some de novo
+    };
+  }
 }
 
 /* Depois do sorteio a seção continua, só para consulta (sem botões). O nome da escolha comprada NÃO aparece aqui: é o amigo
