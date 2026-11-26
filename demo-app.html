@@ -1395,9 +1395,17 @@ var Core = (function () {
     if (p.evitar) l.push('Não gosta ou já tem: ' + p.evitar);
     if (p.restricoes) l.push('A pessoa tem alguma restrição (alergia ou algo que não consome): não sugira comidas, bebidas nem cosméticos.');
     if (desejos) l.push('O que a pessoa disse que gostaria de ganhar: ' + desejos + ' (comece por estas ideias).');
+    var semInfo = perfilVazio(p) && !desejos;
+    if (semInfo) l.push('Não sei nada sobre os gostos da pessoa: sugira presentes que agradam quase todo mundo e, em "perguntas", até 4 perguntas curtas e naturais que eu possa fazer a ela numa conversa anônima, SEM me identificar, para descobrir do que gosta.');
     if (outras && outras.length) l.push('Já recebi estas ideias, não repita: ' + outras.join('; ') + '.');
-    l.push('Responda SOMENTE com JSON, sem nenhum texto fora dele, neste formato: {"ideias":[{"titulo":"nome curto do presente","preco":"faixa de preço em reais, ex.: R$ 120 a 200","onde":"onde costuma ser encontrado no Brasil","porque":"uma frase dizendo por que combina"}]}');
+    l.push('Responda SOMENTE com JSON, sem nenhum texto fora dele, neste formato: {"ideias":[{"titulo":"nome curto do presente","preco":"faixa de preço em reais, ex.: R$ 120 a 200","onde":"onde costuma ser encontrado no Brasil","porque":"uma frase dizendo por que combina"}]' +
+      (semInfo ? ',"perguntas":["pergunta 1","pergunta 2"]' : '') + '}');
     return l.join('\n');
+  }
+  function lerPerguntas(txt) {
+    var s = String(txt || '').replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim(), d = null;
+    try { d = JSON.parse(s); } catch (e) { var m = s.match(/\{[\s\S]*\}/); if (m) try { d = JSON.parse(m[0]); } catch (e2) { d = null; } }
+    return ((d && Array.isArray(d.perguntas)) ? d.perguntas : []).filter(function (q) { return typeof q === 'string' && q.trim(); }).slice(0, 4).map(function (q) { return q.replace(/\s+/g, ' ').trim().substr(0, 200); });
   }
   function lerIdeias(txt) {
     var s = String(txt || '').replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim(), d = null;
@@ -1419,12 +1427,16 @@ var Core = (function () {
     if (protegido(u) && !(ca && passeVale(u, ca.id, passeDe(a, ca.id)))) erro('Para ver as ideias, digite antes a sua senha em "Ver meu amigo".');
     if (!P.ia || (P.iaAtiva && !P.iaAtiva())) erro('As ideias com IA ainda não foram ativadas. Use "Copiar o pedido para outra IA".');
     var alvo = d.ordem[(i + 1) % d.ordem.length], perfil = perfilPresente(usuario(alvo) || {}), mm = membro(x.g.id, alvo) || {};
-    var usados = P.contar ? P.contar('ia:' + Cripto.idPush(u.email) + ':' + hoje(), 90000) : 1;
-    if (usados > IA_POR_DIA) erro('Você já pediu ideias ' + IA_POR_DIA + ' vezes hoje. Amanhã tem mais — ou use "Copiar o pedido para outra IA".');
+    var chave = 'ia:' + Cripto.idPush(u.email) + ':' + hoje();
+    var usados = P.contar ? P.contar(chave, 90000) : 1;
+    if (usados > IA_POR_DIA) { if (P.contar) P.contar(chave, 90000, -1); erro('Você já pediu ideias ' + IA_POR_DIA + ' vezes hoje. Amanhã tem mais — ou use "Copiar o pedido para outra IA".'); }
     var outras = [].concat(a.outras || []).map(function (t) { return String(t).substr(0, 90); }).slice(0, 16);
-    var ideias = lerIdeias(P.ia(pedidoIA(x.g, perfil, String(mm.desejos || '').substr(0, 800), outras)));
-    if (!ideias.length) erro('A IA não respondeu direito desta vez. Tente de novo em instantes.');
-    return { ideias: ideias, restantes: Math.max(0, IA_POR_DIA - usados) };
+    var desejos = String(mm.desejos || '').substr(0, 800), resp = '', ideias = [];
+    try {
+      resp = P.ia(pedidoIA(x.g, perfil, desejos, outras)); ideias = lerIdeias(resp);
+      if (!ideias.length) erro('A IA não respondeu direito desta vez. Tente de novo em instantes.');
+    } catch (e) { if (P.contar) P.contar(chave, 90000, -1); throw e; }   // pedido que falhou não conta no limite do dia
+    return { ideias: ideias, perguntas: lerPerguntas(resp), semPerfil: perfilVazio(perfil), semDesejos: !desejos, restantes: Math.max(0, IA_POR_DIA - usados) };
   };
   api.liberarConversa = function (a) {
     var u = sessao(a.token), x = exigirMembro(u, a.grupoId), c = exigirConversa(u, x.g.id, a.conversaId);
@@ -2615,7 +2627,7 @@ var P = {
   urlApp: function () { return 'https://flecha-secreta.demo/'; },
   emailDe: function (nome) { var c = (typeof window !== 'undefined' && window.DEMO_CONFIG); return nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase() + '@' + (c ? c.dominio : 'familia.demo'); },
   telegramBot: function () { return 'FlechaSecretaBot'; },
-  contar: (function () { var n = {}; return function (k) { n[k] = (n[k] || 0) + 1; return n[k]; }; })(),
+  contar: (function () { var n = {}; return function (k, s, soma) { n[k] = Math.max(0, (n[k] || 0) + (soma == null ? 1 : soma)); return n[k]; }; })(),
   /* Demonstração: não chama o Gemini de verdade; devolve ideias de exemplo, usando o que o pedido diz que a pessoa gosta */
   ia: function (texto) {
     var gosta = (String(texto).match(/Gosta de: ([^.\n]+)/) || [])[1] || '', primeiro = gosta.split(',')[0].trim();
@@ -2629,7 +2641,9 @@ var P = {
       { titulo: 'Manta de sofá macia', preco: 'R$ 110 a 190', onde: 'lojas de cama, mesa e banho', porque: 'Aconchego para as noites de filme.' }
     ].filter(Boolean);
     if (/não repita/.test(texto)) base.reverse();
-    return JSON.stringify({ ideias: base });
+    var r = { ideias: base };
+    if (/Não sei nada/.test(texto)) r.perguntas = ['Qual foi o melhor presente que você já ganhou?', 'O que você faz para relaxar no fim de semana?', 'Tem alguma coisa em casa que você vive dizendo que precisa trocar?'];
+    return JSON.stringify(r);
   },
   umaVez: (function () { var vistos = {}; return function (k, seg) { var t = Date.now(); if (vistos[k] && t - vistos[k] < seg * 1000) return false; vistos[k] = t; return true; }; })(),
   /* na demonstração, todo pedido pendente é tratado como se a pessoa tivesse tocado em Iniciar no Telegram */
@@ -4188,6 +4202,7 @@ function janelaIdeiasIA(a){
   modal('<h2>💡 Ideias de presente</h2>'+
     '<div class="faixa-ia" id="ia-aviso">🤖 <b>Sobre estas ideias</b><br>São geradas pela IA <b>Gemini, do Google</b>, no plano gratuito. Vão só o valor mínimo, o perfil para presentes e a lista "O que eu gostaria de ganhar" do seu amigo — <b>nunca nomes, e-mails, fotos nem alergias</b>. No plano gratuito, o Google pode usar esse texto para melhorar os produtos dele, inclusive com leitura por pessoas. A IA pode errar: confira preços e lojas.'+
     '<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:600"><input type="checkbox" id="ia-ok"'+(aceito?' checked':'')+' style="width:18px;height:18px"> Entendi</label></div>'+
+    (!a.perfil? '<div class="faixa info" id="ia-semperfil"><div>Seu amigo ainda <b>não preencheu o perfil para presentes</b>'+(a.desejos? '; as ideias vão usar só a lista "O que eu gostaria de ganhar".' : ' nem a lista de desejos, então as ideias serão gerais — e a IA sugere perguntas para você descobrir os gostos dele pela conversa, sem se identificar.')+'</div></div>' : '')+
     '<div id="ia-lista"></div>'+
     '<button class="btn" id="ia-gerar"'+(aceito?'':' disabled')+'>Gerar ideias</button>'+
     '<div class="muted" style="font-size:12.5px;text-align:center" id="ia-rest"></div>'+
@@ -4203,7 +4218,9 @@ function janelaIdeiasIA(a){
         return chamar('ideiasPresente',{grupoId:S.gid, aceito:true, outras:vistas, passes:PASSES}).then(function(r){
           r.ideias.forEach(function(x){ vistas.push(x.titulo); });
           lista.innerHTML='<div class="ideias">'+r.ideias.map(function(x,i){ return '<div class="ideia"><div class="ideia-t"><span class="num">'+(i+1)+'</span>'+esc(x.titulo)+'</div>'+
-            ((x.preco||x.onde)? '<div class="ideia-p">'+esc([x.preco,x.onde].filter(Boolean).join(' · '))+'</div>' : '')+(x.porque? '<div class="muted" style="font-size:13px">'+esc(x.porque)+'</div>' : '')+'</div>'; }).join('')+'</div>';
+            ((x.preco||x.onde)? '<div class="ideia-p">'+esc([x.preco,x.onde].filter(Boolean).join(' · '))+'</div>' : '')+(x.porque? '<div class="muted" style="font-size:13px">'+esc(x.porque)+'</div>' : '')+'</div>'; }).join('')+'</div>'+
+            ((r.perguntas||[]).length? '<div class="cartao pilha" id="ia-perguntas" style="gap:6px;margin-top:6px;padding:12px"><b>💬 Perguntas para fazer sem se identificar</b><div class="muted" style="font-size:12.5px">Mande pela conversa "Meu amigo secreto" — lá você aparece como anônimo.</div>'+
+              '<ul style="margin:0;padding-left:18px;font-size:13.5px">'+r.perguntas.map(function(q){ return '<li>'+esc(q)+'</li>'; }).join('')+'</ul></div>' : '');
           rest.textContent= r.restantes? 'Você ainda pode pedir '+r.restantes+(r.restantes===1?' vez':' vezes')+' hoje.' : 'Acabaram os pedidos de hoje. Amanhã tem mais.';
           return r;
         }, function(e){ lista.innerHTML='<div class="faixa erro">'+esc(e.message||e)+'</div>'; return null; });
@@ -4724,6 +4741,11 @@ function desenharDesempenho(box, zerar){
       '<div class="tab-desemp t3" role="table"><div class="td-cab" role="row"><span>Ação</span><span>total</span><span>servidor</span></div>'+
       meus.map(function(x){ return '<div role="row"><span>'+esc(nomeChamada(x.n))+'</span><span><b>'+seg(x.tot)+'</b></span><span>'+seg(x.srv)+'</span></div>'; }).join('')+'</div>'+
       '<div class="muted" style="font-size:12.5px;margin-top:6px">A diferença entre "total" e "servidor" é o caminho pela internet e pelo Google.</div>' : '<div class="cartao muted">Nenhuma ação ainda.</div>');
+    if(d.ia){ var ie=d.ia.erro;
+      h+='<h3 style="margin:16px 0 6px">Ideias com IA (Gemini)</h3><div class="cartao pilha" style="font-size:13.5px;gap:4px">'+
+        '<div><b>Situação:</b> '+(d.ia.ativa? 'ligada (chave cadastrada)' : 'desligada (falta a chave GEMINI_KEY)')+'</div>'+
+        (d.ia.modelo? '<div><b>Último modelo que funcionou:</b> '+esc(d.ia.modelo)+'</div>' : '')+
+        (ie? '<div><b>Último erro:</b> '+esc(horaBR(ie.em))+' · código '+esc(ie.cod)+' · '+esc(ie.modelo||'')+'</div><div class="muted" style="font-size:12.5px;overflow-wrap:anywhere">'+esc(ie.msg||'')+'</div>' : '<div class="muted">Nenhum erro registrado.</div>')+'</div>'; }
     if(!d.indisponivel) h+='<button class="btn sec peq" id="cd-zerar" style="margin-top:12px">Zerar a contagem do servidor</button>';
     box.innerHTML=h;
     var z=$('#cd-zerar',box); if(z) z.onclick=function(){ desenharDesempenho(box, true); };
