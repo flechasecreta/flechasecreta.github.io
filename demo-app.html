@@ -130,6 +130,22 @@ main{padding-bottom:calc(90px + var(--sab))}
 .abas button svg{width:22px;height:22px}
 .abas button[aria-current="true"]{color:var(--brasa)}
 .sub-abas{position:sticky;top:64px;z-index:15;background:var(--fundo);display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:12px 16px 10px;margin:0 -16px;border-bottom:1px solid var(--linha)}
+.chips-p{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip-p{position:relative;font-weight:500}
+.chip-p input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.chip-p span{display:inline-block;border:1px solid var(--linha);border-radius:999px;padding:6px 12px;font-size:13.5px;background:#fff;color:var(--tinta);cursor:pointer;user-select:none;-webkit-user-select:none}
+.chip-p input:checked+span{background:var(--mata);border-color:var(--mata);color:#fff}
+.chip-p input:focus-visible+span{outline:2px solid var(--palha);outline-offset:2px}
+.rotulo-p{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tinta-2);margin-bottom:-4px}
+.grupo-p{border:1px solid var(--linha);border-radius:12px;padding:0 12px;background:#fff}
+.grupo-p>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:11px 0;font-weight:600}
+.grupo-p>summary::-webkit-details-marker{display:none}
+.grupo-p>summary::after{content:'▾';margin-left:auto;color:var(--tinta-2)}
+.grupo-p[open]>summary::after{content:'▴'}
+.grupo-p .sel-p{font-weight:400;font-size:12.5px;color:var(--mata-2);order:3;flex-basis:100%}
+.grupo-p .sel-p:empty{display:none}
+.grupo-p .chips-p{padding-bottom:12px;margin-top:0}
+.faixa-ia{background:#fff7e6;border:1px solid #ecd3a1;border-radius:12px;padding:10px 12px;font-size:13px;color:#6b4a10}
 .tab-desemp{display:grid;font-size:13.5px;border:1px solid var(--linha);border-radius:12px;overflow:hidden;background:var(--cartao)}
 .tab-desemp>div{display:grid;grid-template-columns:minmax(0,1fr) 40px 56px 56px 56px;gap:6px;padding:7px 10px;border-top:1px solid var(--linha);align-items:center}
 @media (max-width:400px){.tab-desemp:not(.t3)>div{grid-template-columns:minmax(0,1fr) 30px 56px 56px}.tab-desemp:not(.t3)>div>span:nth-child(4){display:none}}
@@ -982,17 +998,45 @@ var Core = (function () {
 
   /* Perfil para presentes (26/11/2026): opcional, preenchido pela PRÓPRIA pessoa (nada é deduzido de nome ou foto).
      Só quem a tirou vê, junto com o amigo secreto (api.meuAmigo, que segue a proteção pela senha). */
+  /*LISTAS-PRESENTE (as mesmas listas estão em src/index.html; test_perfil_presente.js confere que são iguais)*/
   var IDADES_PRESENTE = { crianca: 'Criança (até 12 anos)', adolescente: 'Adolescente (13 a 17 anos)', '18-29': '18 a 29 anos', '30-49': '30 a 49 anos', '50-69': '50 a 69 anos', '70+': '70 anos ou mais' };
+  var LISTAS_PRESENTE = {
+    estilo: ['Feminino', 'Masculino', 'Neutro', 'Tanto faz'],
+    camisa: ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
+    calca: ['36', '38', '40', '42', '44', '46', '48', '50+'],
+    calcado: ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45+'],
+    gostos: [
+      ['🔨 Mãos à obra', ['Bricolagem', 'Marcenaria', 'Serralheria', 'Ferramentas', 'Elétrica e eletrônica', 'Jardinagem', 'Artesanato', 'Costura, tricô e crochê', 'Carros e motos']],
+      ['⚽ Esportes', ['Futebol', 'Vôlei', 'Basquete', 'Corrida', 'Ciclismo', 'Natação', 'Tênis / beach tennis', 'Academia', 'Yoga / pilates', 'Lutas', 'Pesca', 'Trilha e camping']],
+      ['🍳 Casa e cozinha', ['Cozinhar', 'Churrasco', 'Doces e confeitaria', 'Café', 'Vinhos', 'Cervejas', 'Decoração', 'Organização']],
+      ['🎬 Cultura e lazer', ['Leitura', 'Música', 'Tocar instrumento', 'Séries e filmes', 'Teatro e shows', 'Fotografia', 'Desenho e pintura', 'Games', 'Jogos de tabuleiro', 'Colecionar']],
+      ['💄 Estilo e bem-estar', ['Moda', 'Bolsas e acessórios', 'Relógios', 'Maquiagem', 'Cuidados com a pele', 'Cabelo', 'Spa e relaxamento']],
+      ['🌎 Outros', ['Viagem', 'Praia', 'Plantas', 'Cachorro', 'Gato', 'Tecnologia', 'Celular e acessórios', 'Fé e espiritualidade', 'Crianças / brinquedos']]
+    ]
+  };
+  /*FIM-LISTAS-PRESENTE*/
+  var TODOS_GOSTOS = [].concat.apply([], LISTAS_PRESENTE.gostos.map(function (g) { return g[1]; }));
+  var TEXTOS_PRESENTE = { medidas: 150, detalhes: 500, precisa: 300, evitar: 300, restricoes: 200 };
+  // só o que está na lista, sem repetir, na ordem da lista
+  function escolhas(v, lista) { v = [].concat(v || []).map(String); return lista.filter(function (x) { return v.indexOf(x) >= 0; }); }
   function perfilPresente(u) {
     var p = {}; try { p = JSON.parse(u && u.presente || '{}') || {}; } catch (e) { p = {}; }
-    return { idade: IDADES_PRESENTE[p.idade] ? p.idade : '', gostos: String(p.gostos || ''), tamanhos: String(p.tamanhos || ''), evitar: String(p.evitar || '') };
+    var r = { idade: IDADES_PRESENTE[p.idade] ? p.idade : '', estilo: escolhas(p.estilo, LISTAS_PRESENTE.estilo), camisa: escolhas(p.camisa, LISTAS_PRESENTE.camisa),
+      calca: escolhas(p.calca, LISTAS_PRESENTE.calca), calcado: escolhas(p.calcado, LISTAS_PRESENTE.calcado), gostos: escolhas(p.gostos, TODOS_GOSTOS) };
+    Object.keys(TEXTOS_PRESENTE).forEach(function (k) { r[k] = String(p[k] || ''); });
+    // perfil da primeira versão (gostos e tamanhos em texto livre)
+    if (typeof p.gostos === 'string' && !r.detalhes) r.detalhes = p.gostos;
+    if (p.tamanhos && !r.medidas) r.medidas = String(p.tamanhos);
+    return r;
   }
+  function perfilVazio(p) { return !p.idade && ['estilo', 'camisa', 'calca', 'calcado', 'gostos'].every(function (k) { return !p[k].length; }) && Object.keys(TEXTOS_PRESENTE).every(function (k) { return !p[k]; }); }
   api.salvarPerfilPresente = function (a) {
-    var u = sessao(a.token), lim = function (v, n) { return String(v || '').trim().substr(0, n); };
+    var u = sessao(a.token);
     if (a.idade && !IDADES_PRESENTE[a.idade]) erro('Faixa de idade inválida.');
-    var p = { idade: a.idade || '', gostos: lim(a.gostos, 500), tamanhos: lim(a.tamanhos, 120), evitar: lim(a.evitar, 300) };
-    var vazio = !p.idade && !p.gostos && !p.tamanhos && !p.evitar;
-    T('Usuarios').update(function (x) { return x.email === u.email; }, { presente: vazio ? '' : JSON.stringify(p) });
+    var p = { idade: a.idade || '', estilo: escolhas(a.estilo, LISTAS_PRESENTE.estilo), camisa: escolhas(a.camisa, LISTAS_PRESENTE.camisa),
+      calca: escolhas(a.calca, LISTAS_PRESENTE.calca), calcado: escolhas(a.calcado, LISTAS_PRESENTE.calcado), gostos: escolhas(a.gostos, TODOS_GOSTOS) };
+    Object.keys(TEXTOS_PRESENTE).forEach(function (k) { p[k] = String(a[k] || '').trim().substr(0, TEXTOS_PRESENTE[k]); });
+    T('Usuarios').update(function (x) { return x.email === u.email; }, { presente: perfilVazio(p) ? '' : JSON.stringify(p) });
     return api.eu(a);
   };
 
@@ -1302,7 +1346,7 @@ var Core = (function () {
     var alvo = d.ordem[(i + 1) % d.ordem.length], pu = usuario(alvo) || {}, mm = membro(x.g.id, alvo) || {};
     var pp = perfilPresente(pu);
     return { sorteado: true, nome: pu.nome || alvo, foto: pu.foto || '', desejos: mm.desejos || '',
-      perfil: (pp.idade || pp.gostos || pp.tamanhos || pp.evitar) ? { idade: pp.idade ? IDADES_PRESENTE[pp.idade] : '', gostos: pp.gostos, tamanhos: pp.tamanhos, evitar: pp.evitar } : null };
+      perfil: perfilVazio(pp) ? null : (pp.idade = pp.idade ? IDADES_PRESENTE[pp.idade] : '', pp) };
   };
 
   api.revelarAmigo = function (a) {
@@ -3447,7 +3491,8 @@ function revelarAmigo(a){
   r.innerHTML='<div class="rotulo">Você tirou</div><div class="revelado" style="margin-top:10px">'+avatar(a.foto,a.nome,'g')+'<div><div class="nome-amigo">'+esc(a.nome)+'</div><button class="link" id="bil-esc" style="color:var(--palha)">Esconder</button></div></div>'+
     '<div class="desejos">'+(a.desejos? '<div class="rotulo" style="margin-bottom:4px">Gostaria de ganhar</div>'+esc(a.desejos) : 'Ainda não colocou sugestões de presente. Que tal perguntar pela conversa, sem se identificar?')+'</div>'+
     (a.perfil? '<div class="desejos" id="bil-perfil"><div class="rotulo" style="margin-bottom:4px">Perfil para presentes</div>'+
-      [['Idade',a.perfil.idade],['Gostos',a.perfil.gostos],['Tamanhos',a.perfil.tamanhos],['Não gosta / já tem',a.perfil.evitar]].filter(function(x){ return x[1]; }).map(function(x){ return '<div><b>'+x[0]+':</b> '+esc(x[1])+'</div>'; }).join('')+'</div>' : '')+
+      (function(p){ return [['Idade',p.idade],['Estilo',ouLista(p.estilo||[]).toLowerCase()],['Medidas',medidasTexto(p)],['Gosta de',[(p.gostos||[]).join(', ').toLowerCase(), p.detalhes].filter(Boolean).join('. ')],
+        ['Precisando de',p.precisa],['Evitar',p.evitar],['Alergias e restrições',p.restricoes]].filter(function(x){ return x[1]; }).map(function(x){ return '<div><b>'+x[0]+':</b> '+esc(x[1])+'</div>'; }).join(''); })(a.perfil)+'</div>' : '')+
     '<button class="btn sec peq" id="bil-ia" style="margin-top:12px;background:transparent;color:#fff;border-color:rgba(255,255,255,.55)">💡 Pedir ideias de presente à IA</button>'+
     '<div class="linha-acoes" style="margin-top:14px"><button class="btn" data-ir="amigo">'+I.balao+'Conversar com meu amigo</button><button class="btn mata" data-ir="tirou">'+I.presente+'Falar com quem me tirou</button></div>'+
     '<div style="font-size:12px;opacity:.7;margin-top:10px">Some sozinho em 20 segundos.</div>';
@@ -3899,7 +3944,7 @@ function abaAjuda(c){
         'Depois do sorteio, toque em <b>Toque para ver</b> para descobrir quem você tirou (confira se ninguém está olhando a tela!). Aparecem também as sugestões de presente dessa pessoa. O nome some sozinho em 20 segundos.',
         '<b>Proteção pela senha:</b> o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Ela já vem ligada para todos, para que ninguém que pegue o seu celular descubra o seu amigo secreto. Quem preferir pode desligar no <b>Perfil</b> (também com a senha).',
         'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você. '+
-        'No <b>Perfil</b>, o <b>Perfil para presentes</b> (opcional: idade, gostos, tamanhos, o que não gosta) aparece só para quem tirou você. '+
+        'No <b>Perfil</b>, o <b>Perfil para presentes</b> (opcional: idade, medidas, do que você gosta, o que está precisando e o que é melhor evitar) aparece só para quem tirou você.'+
         'Ao ver o seu amigo secreto, o botão <b>Pedir ideias de presente à IA</b> monta um pedido pronto, sem nomes, para colar no aplicativo de IA que você usa.'
       ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
       bloco('balao','Conversas', lst([
@@ -3996,25 +4041,71 @@ function abaAjuda(c){
 function abaPerfil(c){ telaPerfil(c); }
 /* Perfil para presentes: opcional, preenchido pela própria pessoa; só quem a tirou vê (com o amigo secreto, protegido pela senha) */
 var IDADES_PRESENTE=[['','Prefiro não dizer'],['crianca','Criança (até 12 anos)'],['adolescente','Adolescente (13 a 17 anos)'],['18-29','18 a 29 anos'],['30-49','30 a 49 anos'],['50-69','50 a 69 anos'],['70+','70 anos ou mais']];
-function secaoPerfilPresente(p){
-  return '<div class="secao"><h2>Perfil para presentes <span class="muted" style="font-weight:400;font-size:14px">(opcional)</span></h2><form class="cartao pilha" id="pp-f" autocomplete="off">'+
-    '<div class="muted" style="font-size:13.5px">Ajuda quem tirou você a acertar no presente. <b>Só quem tirou você vê</b>, junto com o seu nome; preencha só o que quiser.</div>'+
-    '<label class="campo">Faixa de idade<select class="inp" id="pp-idade">'+IDADES_PRESENTE.map(function(o){ return '<option value="'+o[0]+'"'+(p.idade===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></label>'+
-    '<label class="campo">Gostos e hobbies<textarea class="inp" id="pp-gostos" maxlength="500" placeholder="Ex.: cozinhar, futebol, séries policiais, jardinagem, café…">'+esc(p.gostos||'')+'</textarea></label>'+
-    '<label class="campo">Tamanhos<input class="inp" id="pp-tam" maxlength="120" value="'+esc(p.tamanhos||'')+'" placeholder="Ex.: camisa M, calça 40, calçado 38"></label>'+
-    '<label class="campo">Não gosto / já tenho<textarea class="inp" id="pp-evitar" maxlength="300" placeholder="Ex.: perfume, canecas, livros de autoajuda">'+esc(p.evitar||'')+'</textarea></label>'+
-    '<button class="btn sec">Salvar perfil para presentes</button></form></div>';
+/*LISTAS-PRESENTE (iguais às de src/core.js; test_perfil_presente.js confere)*/
+var LISTAS_PRESENTE = {
+    estilo: ['Feminino', 'Masculino', 'Neutro', 'Tanto faz'],
+    camisa: ['PP', 'P', 'M', 'G', 'GG', 'XGG'],
+    calca: ['36', '38', '40', '42', '44', '46', '48', '50+'],
+    calcado: ['35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45+'],
+    gostos: [
+      ['🔨 Mãos à obra', ['Bricolagem', 'Marcenaria', 'Serralheria', 'Ferramentas', 'Elétrica e eletrônica', 'Jardinagem', 'Artesanato', 'Costura, tricô e crochê', 'Carros e motos']],
+      ['⚽ Esportes', ['Futebol', 'Vôlei', 'Basquete', 'Corrida', 'Ciclismo', 'Natação', 'Tênis / beach tennis', 'Academia', 'Yoga / pilates', 'Lutas', 'Pesca', 'Trilha e camping']],
+      ['🍳 Casa e cozinha', ['Cozinhar', 'Churrasco', 'Doces e confeitaria', 'Café', 'Vinhos', 'Cervejas', 'Decoração', 'Organização']],
+      ['🎬 Cultura e lazer', ['Leitura', 'Música', 'Tocar instrumento', 'Séries e filmes', 'Teatro e shows', 'Fotografia', 'Desenho e pintura', 'Games', 'Jogos de tabuleiro', 'Colecionar']],
+      ['💄 Estilo e bem-estar', ['Moda', 'Bolsas e acessórios', 'Relógios', 'Maquiagem', 'Cuidados com a pele', 'Cabelo', 'Spa e relaxamento']],
+      ['🌎 Outros', ['Viagem', 'Praia', 'Plantas', 'Cachorro', 'Gato', 'Tecnologia', 'Celular e acessórios', 'Fé e espiritualidade', 'Crianças / brinquedos']]
+    ]
+  };
+/*FIM-LISTAS-PRESENTE*/
+function chipsPresente(nome, lista, marcados){
+  return '<div class="chips-p">'+lista.map(function(x){ return '<label class="chip-p"><input type="checkbox" name="'+nome+'" value="'+esc(x)+'"'+((marcados||[]).indexOf(x)>=0?' checked':'')+'><span>'+esc(x)+'</span></label>'; }).join('')+'</div>';
 }
+function secaoPerfilPresente(p){
+  var L=LISTAS_PRESENTE, txt=function(id, campo, n, ph, area){ return area? '<textarea class="inp" id="'+id+'" maxlength="'+n+'" placeholder="'+ph+'">'+esc(p[campo]||'')+'</textarea>' : '<input class="inp" id="'+id+'" maxlength="'+n+'" value="'+esc(p[campo]||'')+'" placeholder="'+ph+'">'; };
+  return '<div class="secao" id="pp-secao"><h2>🎁 Ajude quem tirou você <span class="muted" style="font-weight:400;font-size:14px">(opcional)</span></h2>'+
+    '<div class="muted" style="font-size:13.5px;margin:-4px 0 10px">Perfil para presentes. Preencha só o que quiser. <b>Só quem tirou você vê</b>, depois do sorteio.</div>'+
+    '<form class="pilha" id="pp-f" autocomplete="off" style="gap:12px">'+
+    '<div class="rotulo-p">1. Sobre mim</div><div class="cartao pilha">'+
+      '<label class="campo">Faixa de idade<select class="inp" id="pp-idade">'+IDADES_PRESENTE.map(function(o){ return '<option value="'+o[0]+'"'+(p.idade===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></label>'+
+      '<div class="campo">Estilo de presente que prefiro <span style="font-weight:400">(pode marcar mais de um)</span>'+chipsPresente('pp-estilo', L.estilo, p.estilo)+'</div></div>'+
+    '<div class="rotulo-p">2. Minhas medidas</div><div class="cartao pilha"><div class="muted" style="font-size:13px">Toque em <b>um ou mais</b> — por exemplo, calçado 40 <b>e</b> 41.</div>'+
+      '<div class="campo">Camisa / blusa'+chipsPresente('pp-camisa', L.camisa, p.camisa)+'</div>'+
+      '<div class="campo">Calça / bermuda'+chipsPresente('pp-calca', L.calca, p.calca)+'</div>'+
+      '<div class="campo">Calçado'+chipsPresente('pp-calcado', L.calcado, p.calcado)+'</div>'+
+      '<label class="campo">Outras medidas'+txt('pp-medidas','medidas',150,'Ex.: anel 18, chinelo 39/40, roupa infantil 8 anos')+'</label></div>'+
+    '<div class="rotulo-p">3. Do que eu gosto</div><div class="cartao pilha"><div class="muted" style="font-size:13px">Toque num grupo para abrir e marque quantos quiser.</div>'+
+      L.gostos.map(function(gr){ var n=gr[1].filter(function(x){ return (p.gostos||[]).indexOf(x)>=0; });
+        return '<details class="grupo-p"><summary><span>'+esc(gr[0])+'</span><span class="sel-p">'+esc(n.join(', '))+'</span></summary>'+chipsPresente('pp-gosto', gr[1], p.gostos)+'</details>'; }).join('')+
+      '<label class="campo">Mais detalhes <span style="font-weight:400">(o que não está na lista, time, autor, banda…)</span>'+txt('pp-detalhes','detalhes',500,'Ex.: time Flamengo, séries policiais, café coado',true)+'</label></div>'+
+    '<div class="rotulo-p">4. Estou precisando de…</div><div class="cartao pilha"><label class="campo">Coisas que estão me fazendo falta'+txt('pp-precisa','precisa',300,'Ex.: garrafa térmica, chinelo novo, carregador portátil',true)+'</label></div>'+
+    '<div class="rotulo-p">5. Melhor evitar</div><div class="cartao pilha"><label class="campo">Não gosto / já tenho'+txt('pp-evitar','evitar',300,'Ex.: perfume, canecas',true)+'</label>'+
+      '<label class="campo">Alergias e restrições'+txt('pp-restricoes','restricoes',200,'Ex.: não bebo álcool; alergia a amendoim')+'</label></div>'+
+    '<div class="faixa-ia">🤖 <b>Ideias com IA:</b> quem tirou você pode usar este perfil, <b>sem o seu nome</b>, para pedir ideias de presente a uma inteligência artificial (como Gemini ou Claude). <b>Alergias e restrições não vão</b> para a IA. Não escreva nada que não queira compartilhar.</div>'+
+    '<button class="btn">Salvar meu perfil para presentes</button></form></div>';
+}
+function lerPerfilPresente(){
+  var marc=function(n){ return $$('input[name="'+n+'"]:checked').map(function(i){ return i.value; }); };
+  return { idade:$('#pp-idade').value, estilo:marc('pp-estilo'), camisa:marc('pp-camisa'), calca:marc('pp-calca'), calcado:marc('pp-calcado'), gostos:marc('pp-gosto'),
+    medidas:$('#pp-medidas').value, detalhes:$('#pp-detalhes').value, precisa:$('#pp-precisa').value, evitar:$('#pp-evitar').value, restricoes:$('#pp-restricoes').value };
+}
+/* texto do perfil (cartão do amigo e pedido à IA): "camisa G ou GG · calçado 40 ou 41" */
+function ouLista(l){ return l.length<2? (l[0]||'') : l.slice(0,-1).join(', ')+' ou '+l[l.length-1]; }
+function medidasTexto(p){ return [p.camisa&&p.camisa.length? 'camisa '+ouLista(p.camisa):'', p.calca&&p.calca.length? 'calça '+ouLista(p.calca):'', p.calcado&&p.calcado.length? 'calçado '+ouLista(p.calcado):'', p.medidas||''].filter(Boolean).join(' · '); }
 /* "Pedir ideias à IA" (sem custo): monta o pedido pronto, SEM nomes, para a pessoa colar no aplicativo de IA que preferir */
 function pedidoIdeias(a, g){
-  var p=a.perfil||{}, l=['Estou participando de um amigo secreto em família, no Natal. Sugira 8 ideias de presente para a pessoa que eu tirei.'];
+  var p=a.perfil||{}, l=['Estou participando de um amigo secreto em família, no Natal. Sugira 8 ideias de presente para a pessoa que eu tirei.'], med=medidasTexto(p);
   if(g && g.valorMinimo) l.push('Valor mínimo combinado: R$ '+g.valorMinimo+' (pode passar um pouco, mas não muito).');
   if(p.idade) l.push('Faixa de idade: '+p.idade+'.');
-  if(p.gostos) l.push('Gostos e hobbies: '+p.gostos);
-  if(p.tamanhos) l.push('Tamanhos: '+p.tamanhos);
+  if(p.estilo && p.estilo.length) l.push('Estilo de presente que a pessoa prefere: '+ouLista(p.estilo).toLowerCase()+'.');
+  if(med) l.push('Medidas: '+med+'.');
+  if(p.gostos && p.gostos.length) l.push('Gosta de: '+p.gostos.join(', ').toLowerCase()+'.');
+  if(p.detalhes) l.push('Mais sobre os gostos: '+p.detalhes);
+  if(p.precisa) l.push('Está precisando de: '+p.precisa);
   if(p.evitar) l.push('Não gosta ou já tem: '+p.evitar);
+  // alergias e restrições não vão para a IA: só um aviso genérico
+  if(p.restricoes) l.push('A pessoa tem alguma restrição (alergia ou algo que não consome): evite sugerir comidas, bebidas e cosméticos.');
   if(a.desejos) l.push('O que a pessoa disse que gostaria de ganhar: '+a.desejos);
-  if(!p.idade && !p.gostos && !p.tamanhos && !a.desejos) l.push('Não sei nada sobre os gostos da pessoa: sugira presentes que agradam quase todo mundo e me diga que perguntas eu poderia fazer, sem me identificar, para acertar mais.');
+  if(!p.idade && !(p.gostos||[]).length && !p.detalhes && !med && !p.precisa && !a.desejos) l.push('Não sei nada sobre os gostos da pessoa: sugira presentes que agradam quase todo mundo e me diga que perguntas eu poderia fazer, sem me identificar, para acertar mais.');
   l.push('Para cada ideia, diga o preço aproximado em reais, onde costuma ser encontrada no Brasil e por que combina com a pessoa.'+(a.desejos? ' Comece pelas ideias que estão na lista da pessoa.' : ''));
   return l.join('\n');
 }
@@ -4022,7 +4113,8 @@ function janelaIdeias(a){
   var txt=pedidoIdeias(a, S.g);
   modal('<h2>💡 Pedir ideias à IA</h2><div class="muted" style="font-size:14px">O pedido abaixo já está pronto, <b>sem nenhum nome</b>. Copie e cole no aplicativo de inteligência artificial que você usa (Claude, ChatGPT, Gemini…). Não custa nada.</div>'+
     '<textarea class="inp" id="ia-t" readonly style="min-height:190px;font-size:13.5px">'+esc(txt)+'</textarea>'+
-    '<div class="linha-acoes" style="justify-content:flex-end"><button class="btn sec" id="ia-abrir">Abrir o Claude</button><button class="btn" id="ia-copiar">Copiar pedido</button></div>'+
+    '<button class="btn" id="ia-copiar">Copiar pedido</button>'+
+    '<div class="linha-acoes" style="justify-content:center"><button class="btn sec peq" id="ia-gemini">Abrir o Gemini</button><button class="btn sec peq" id="ia-abrir">Abrir o Claude</button></div>'+
     '<button class="link" data-fechar style="font-size:13px">Fechar</button>', function(m){
     var t=$('#ia-t',m);
     $('#ia-copiar',m).onclick=function(){
@@ -4030,6 +4122,7 @@ function janelaIdeias(a){
       try{ navigator.clipboard.writeText(t.value).then(function(){ aviso('Pedido copiado. Agora é só colar na IA.'); }, manual); }catch(e){ manual(); }
     };
     $('#ia-abrir',m).onclick=function(){ abrirLink('https://claude.ai/new'); };
+    $('#ia-gemini',m).onclick=function(){ abrirLink('https://gemini.google.com/app'); };
   });
 }
 function telaPerfil(c){
@@ -4075,8 +4168,13 @@ function telaPerfil(c){
     }).catch(function(e){ pp.checked=!quer; falha(e); }).then(function(){ pp.disabled=false; });
   };
   desenharEmail($('#pf-email'));
-  var pr=$('#pp-f'); if(pr) pr.onsubmit=function(ev){ ev.preventDefault();
-    var d={idade:$('#pp-idade').value, gostos:$('#pp-gostos').value, tamanhos:$('#pp-tam').value, evitar:$('#pp-evitar').value};
+  var pr=$('#pp-f');
+  // o resumo do grupo (fechado) mostra o que foi marcado
+  if(pr) pr.addEventListener('change', function(ev){ var g=ev.target.closest && ev.target.closest('.grupo-p'); if(!g) return;
+    $('.sel-p', g).textContent=$$('input:checked', g).map(function(i){ return i.value; }).join(', '); });
+  if(pr) pr.onsubmit=function(ev){ ev.preventDefault();
+    var d=lerPerfilPresente();
+    $$('.grupo-p', pr).forEach(function(g){ g.open=false; });
     ocupado(pr.querySelector('button'), function(){ return chamar('salvarPerfilPresente', d).then(function(eu2){ S.eu=eu2; aviso('Perfil para presentes salvo.'); }); }); };
   function prefCompra(id, campo, msgSim, msgNao){ var el=$('#'+id); if(!el) return; el.onchange=function(){ var v=el.checked, d={grupoId:S.gid}; d[campo]=v;
     chamar('preferenciaAbraco', d).then(function(g2){ S.g=g2; aviso(v?msgSim:msgNao); }).catch(function(e){ el.checked=!v; falha(e); }); }; }
