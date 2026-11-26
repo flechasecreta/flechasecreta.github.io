@@ -416,7 +416,7 @@ var APP_NOME = 'Flecha Secreta';
 var APP_LEMA = 'o amigo secreto da sua turma';
 
 var TABELAS = {
-  Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira', 'push', 'semPrevia', 'protegeAmigo'],
+  Usuarios: ['email', 'nome', 'telefone', 'foto', 'senhaHash', 'salt', 'ativo', 'tokenSenha', 'tokenSenhaExpira', 'criadoEm', 'ultimoAcesso', 'avisoTopico', 'emailNovo', 'tokenEmail', 'tokenEmailExpira', 'push', 'semPrevia', 'protegeAmigo', 'presente'],
   Grupos: ['id', 'nome', 'logo', 'valorMinimo', 'dataRevelacao', 'horaRevelacao', 'localNome', 'localEndereco', 'auditor', 'admins', 'sorteioEm', 'sorteioCodigo', 'trapaca', 'trapacaNota', 'criadoPor', 'criadoEm',
     'compraAtiva', 'compraValor', 'compraBanco', 'compraAgencia', 'compraConta', 'compraTitular', 'compraPix', 'compraLimite', 'edicaoDe', 'telefoneLiberado',
     'abracoAtivo', 'abracoValor', 'abracoLimite', 'abracoOptOut', 'compraOptOut'],
@@ -977,7 +977,23 @@ var Core = (function () {
       avisoLink: /^pend:/.test(u.avisoTopico) && P.telegramBot && P.telegramBot() ? 'https://t.me/' + P.telegramBot() + '?start=' + u.avisoTopico.substr(5) : '',
       avisoDisponivel: !!(P.telegramBot && P.telegramBot()),
       pushDisponivel: pushAtivo(), push: !!u.push, previa: u.semPrevia !== 'sim', protegeAmigo: querProtecao(u), pushId: pushAtivo() ? Cripto.idPush(u.email) : '',
-      emailNovo: (u.emailNovo && new Date(u.tokenEmailExpira).getTime() > Date.now()) ? u.emailNovo : '' };
+      emailNovo: (u.emailNovo && new Date(u.tokenEmailExpira).getTime() > Date.now()) ? u.emailNovo : '', perfilPresente: perfilPresente(u) };
+  };
+
+  /* Perfil para presentes (26/11/2026): opcional, preenchido pela PRÓPRIA pessoa (nada é deduzido de nome ou foto).
+     Só quem a tirou vê, junto com o amigo secreto (api.meuAmigo, que segue a proteção pela senha). */
+  var IDADES_PRESENTE = { crianca: 'Criança (até 12 anos)', adolescente: 'Adolescente (13 a 17 anos)', '18-29': '18 a 29 anos', '30-49': '30 a 49 anos', '50-69': '50 a 69 anos', '70+': '70 anos ou mais' };
+  function perfilPresente(u) {
+    var p = {}; try { p = JSON.parse(u && u.presente || '{}') || {}; } catch (e) { p = {}; }
+    return { idade: IDADES_PRESENTE[p.idade] ? p.idade : '', gostos: String(p.gostos || ''), tamanhos: String(p.tamanhos || ''), evitar: String(p.evitar || '') };
+  }
+  api.salvarPerfilPresente = function (a) {
+    var u = sessao(a.token), lim = function (v, n) { return String(v || '').trim().substr(0, n); };
+    if (a.idade && !IDADES_PRESENTE[a.idade]) erro('Faixa de idade inválida.');
+    var p = { idade: a.idade || '', gostos: lim(a.gostos, 500), tamanhos: lim(a.tamanhos, 120), evitar: lim(a.evitar, 300) };
+    var vazio = !p.idade && !p.gostos && !p.tamanhos && !p.evitar;
+    T('Usuarios').update(function (x) { return x.email === u.email; }, { presente: vazio ? '' : JSON.stringify(p) });
+    return api.eu(a);
   };
 
   api.salvarPerfil = function (a) {
@@ -1284,7 +1300,9 @@ var Core = (function () {
     if (i < 0) return { sorteado: true, fora: true };
     if (protegido(u) && !a._liberado) return { sorteado: true, protegido: true };
     var alvo = d.ordem[(i + 1) % d.ordem.length], pu = usuario(alvo) || {}, mm = membro(x.g.id, alvo) || {};
-    return { sorteado: true, nome: pu.nome || alvo, foto: pu.foto || '', desejos: mm.desejos || '' };
+    var pp = perfilPresente(pu);
+    return { sorteado: true, nome: pu.nome || alvo, foto: pu.foto || '', desejos: mm.desejos || '',
+      perfil: (pp.idade || pp.gostos || pp.tamanhos || pp.evitar) ? { idade: pp.idade ? IDADES_PRESENTE[pp.idade] : '', gostos: pp.gostos, tamanhos: pp.tamanhos, evitar: pp.evitar } : null };
   };
 
   api.revelarAmigo = function (a) {
@@ -3428,10 +3446,14 @@ function revelarAmigo(a){
   var r=$('#bil-r'); if(!r) return;
   r.innerHTML='<div class="rotulo">Você tirou</div><div class="revelado" style="margin-top:10px">'+avatar(a.foto,a.nome,'g')+'<div><div class="nome-amigo">'+esc(a.nome)+'</div><button class="link" id="bil-esc" style="color:var(--palha)">Esconder</button></div></div>'+
     '<div class="desejos">'+(a.desejos? '<div class="rotulo" style="margin-bottom:4px">Gostaria de ganhar</div>'+esc(a.desejos) : 'Ainda não colocou sugestões de presente. Que tal perguntar pela conversa, sem se identificar?')+'</div>'+
+    (a.perfil? '<div class="desejos" id="bil-perfil"><div class="rotulo" style="margin-bottom:4px">Perfil para presentes</div>'+
+      [['Idade',a.perfil.idade],['Gostos',a.perfil.gostos],['Tamanhos',a.perfil.tamanhos],['Não gosta / já tem',a.perfil.evitar]].filter(function(x){ return x[1]; }).map(function(x){ return '<div><b>'+x[0]+':</b> '+esc(x[1])+'</div>'; }).join('')+'</div>' : '')+
+    '<button class="btn sec peq" id="bil-ia" style="margin-top:12px;background:transparent;color:#fff;border-color:rgba(255,255,255,.55)">💡 Pedir ideias de presente à IA</button>'+
     '<div class="linha-acoes" style="margin-top:14px"><button class="btn" data-ir="amigo">'+I.balao+'Conversar com meu amigo</button><button class="btn mata" data-ir="tirou">'+I.presente+'Falar com quem me tirou</button></div>'+
     '<div style="font-size:12px;opacity:.7;margin-top:10px">Some sozinho em 20 segundos.</div>';
   $('#bil-c').hidden=true; r.hidden=false;
   $('#bil-esc').onclick=esconderAmigo;
+  $('#bil-ia').onclick=function(){ janelaIdeias(a); };
   $$('[data-ir]', r).forEach(function(b){ b.onclick=function(){ esconderAmigo(); chamar('conversas',{grupoId:S.gid}).then(function(cs){ var alvo=cs.filter(function(k){ return k.tipo==='amigo' && (b.dataset.ir==='amigo'? k.ordem===0 : k.ordem===1); })[0]; if(alvo){ S.conv=alvo.id; mostrarAba('conversas'); } }).catch(falha); }; });
   clearTimeout(tEsconder); tEsconder=setTimeout(esconderAmigo, 20000);
 }
@@ -3876,7 +3898,9 @@ function abaAjuda(c){
         'Antes do sorteio, mostra a data, o horário, o local e o valor mínimo do presente.',
         'Depois do sorteio, toque em <b>Toque para ver</b> para descobrir quem você tirou (confira se ninguém está olhando a tela!). Aparecem também as sugestões de presente dessa pessoa. O nome some sozinho em 20 segundos.',
         '<b>Proteção pela senha:</b> o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Ela já vem ligada para todos, para que ninguém que pegue o seu celular descubra o seu amigo secreto. Quem preferir pode desligar no <b>Perfil</b> (também com a senha).',
-        'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você.'
+        'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você. '+
+        'No <b>Perfil</b>, o <b>Perfil para presentes</b> (opcional: idade, gostos, tamanhos, o que não gosta) aparece só para quem tirou você. '+
+        'Ao ver o seu amigo secreto, o botão <b>Pedir ideias de presente à IA</b> monta um pedido pronto, sem nomes, para colar no aplicativo de IA que você usa.'
       ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
       bloco('balao','Conversas', lst([
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
@@ -3970,6 +3994,44 @@ function abaAjuda(c){
 
 /* ---------- aba: perfil ---------- */
 function abaPerfil(c){ telaPerfil(c); }
+/* Perfil para presentes: opcional, preenchido pela própria pessoa; só quem a tirou vê (com o amigo secreto, protegido pela senha) */
+var IDADES_PRESENTE=[['','Prefiro não dizer'],['crianca','Criança (até 12 anos)'],['adolescente','Adolescente (13 a 17 anos)'],['18-29','18 a 29 anos'],['30-49','30 a 49 anos'],['50-69','50 a 69 anos'],['70+','70 anos ou mais']];
+function secaoPerfilPresente(p){
+  return '<div class="secao"><h2>Perfil para presentes <span class="muted" style="font-weight:400;font-size:14px">(opcional)</span></h2><form class="cartao pilha" id="pp-f" autocomplete="off">'+
+    '<div class="muted" style="font-size:13.5px">Ajuda quem tirou você a acertar no presente. <b>Só quem tirou você vê</b>, junto com o seu nome; preencha só o que quiser.</div>'+
+    '<label class="campo">Faixa de idade<select class="inp" id="pp-idade">'+IDADES_PRESENTE.map(function(o){ return '<option value="'+o[0]+'"'+(p.idade===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></label>'+
+    '<label class="campo">Gostos e hobbies<textarea class="inp" id="pp-gostos" maxlength="500" placeholder="Ex.: cozinhar, futebol, séries policiais, jardinagem, café…">'+esc(p.gostos||'')+'</textarea></label>'+
+    '<label class="campo">Tamanhos<input class="inp" id="pp-tam" maxlength="120" value="'+esc(p.tamanhos||'')+'" placeholder="Ex.: camisa M, calça 40, calçado 38"></label>'+
+    '<label class="campo">Não gosto / já tenho<textarea class="inp" id="pp-evitar" maxlength="300" placeholder="Ex.: perfume, canecas, livros de autoajuda">'+esc(p.evitar||'')+'</textarea></label>'+
+    '<button class="btn sec">Salvar perfil para presentes</button></form></div>';
+}
+/* "Pedir ideias à IA" (sem custo): monta o pedido pronto, SEM nomes, para a pessoa colar no aplicativo de IA que preferir */
+function pedidoIdeias(a, g){
+  var p=a.perfil||{}, l=['Estou participando de um amigo secreto em família, no Natal. Sugira 8 ideias de presente para a pessoa que eu tirei.'];
+  if(g && g.valorMinimo) l.push('Valor mínimo combinado: R$ '+g.valorMinimo+' (pode passar um pouco, mas não muito).');
+  if(p.idade) l.push('Faixa de idade: '+p.idade+'.');
+  if(p.gostos) l.push('Gostos e hobbies: '+p.gostos);
+  if(p.tamanhos) l.push('Tamanhos: '+p.tamanhos);
+  if(p.evitar) l.push('Não gosta ou já tem: '+p.evitar);
+  if(a.desejos) l.push('O que a pessoa disse que gostaria de ganhar: '+a.desejos);
+  if(!p.idade && !p.gostos && !p.tamanhos && !a.desejos) l.push('Não sei nada sobre os gostos da pessoa: sugira presentes que agradam quase todo mundo e me diga que perguntas eu poderia fazer, sem me identificar, para acertar mais.');
+  l.push('Para cada ideia, diga o preço aproximado em reais, onde costuma ser encontrada no Brasil e por que combina com a pessoa.'+(a.desejos? ' Comece pelas ideias que estão na lista da pessoa.' : ''));
+  return l.join('\n');
+}
+function janelaIdeias(a){
+  var txt=pedidoIdeias(a, S.g);
+  modal('<h2>💡 Pedir ideias à IA</h2><div class="muted" style="font-size:14px">O pedido abaixo já está pronto, <b>sem nenhum nome</b>. Copie e cole no aplicativo de inteligência artificial que você usa (Claude, ChatGPT, Gemini…). Não custa nada.</div>'+
+    '<textarea class="inp" id="ia-t" readonly style="min-height:190px;font-size:13.5px">'+esc(txt)+'</textarea>'+
+    '<div class="linha-acoes" style="justify-content:flex-end"><button class="btn sec" id="ia-abrir">Abrir o Claude</button><button class="btn" id="ia-copiar">Copiar pedido</button></div>'+
+    '<button class="link" data-fechar style="font-size:13px">Fechar</button>', function(m){
+    var t=$('#ia-t',m);
+    $('#ia-copiar',m).onclick=function(){
+      function manual(){ try{ t.focus(); t.select(); t.setSelectionRange(0, t.value.length); }catch(e){} aviso('Texto selecionado: toque em Copiar.'); }
+      try{ navigator.clipboard.writeText(t.value).then(function(){ aviso('Pedido copiado. Agora é só colar na IA.'); }, manual); }catch(e){ manual(); }
+    };
+    $('#ia-abrir',m).onclick=function(){ abrirLink('https://claude.ai/new'); };
+  });
+}
 function telaPerfil(c){
   var semGrupo=!c;
   if(semGrupo){ app.innerHTML='<header class="topo"><div class="wrap"><button class="icobtn" id="pf-v" aria-label="Voltar">'+I.voltar+'</button><div class="tit"><h1>Meu perfil</h1></div></div></header><main class="wrap" id="conteudo"></main>'; c=$('#conteudo'); $('#pf-v').onclick=telaGrupos; }
@@ -3979,6 +4041,7 @@ function telaPerfil(c){
     '<div class="grade2"><label class="campo">Nome<input class="inp" id="pf-nome" value="'+esc(eu.nome)+'"></label>'+(eu.telefoneLiberado? '<label class="campo">Celular<input class="inp" id="pf-tel" inputmode="tel" maxlength="15" value="'+esc(eu.telefone||'')+'" placeholder="(99) 99999-9999"></label>' : (eu.telefone? '<div class="campo" style="font-size:13px;font-weight:600;color:var(--tinta-2)">Celular<div class="inp" style="color:var(--tinta-2)">'+esc(eu.telefone)+'</div></div>' : ''))+'</div>'+
     '<div class="muted" style="font-size:13px">O celular fica visível apenas para os administradores.</div>'+
     '<button class="btn" id="pf-ok">Salvar perfil</button></div></div>'+
+    secaoPerfilPresente(eu.perfilPresente || {})+
     (S.g && S.g.souMembro && !S.g.suporte && !S.g.souAdmin && !semGrupo? '<div class="secao"><h2>Fale com os administradores</h2><div class="cartao pilha" id="pf-recados">'+carregando()+'</div></div>' : '')+
     (function(){ var g=S.g; if(!g || !g.souMembro || semGrupo) return '';
       var opE = g.compraAtiva && g.compraOptOut, opA = g.abracoAtivo && g.abracoOptOut; if(!opE && !opA) return '';
@@ -4012,6 +4075,9 @@ function telaPerfil(c){
     }).catch(function(e){ pp.checked=!quer; falha(e); }).then(function(){ pp.disabled=false; });
   };
   desenharEmail($('#pf-email'));
+  var pr=$('#pp-f'); if(pr) pr.onsubmit=function(ev){ ev.preventDefault();
+    var d={idade:$('#pp-idade').value, gostos:$('#pp-gostos').value, tamanhos:$('#pp-tam').value, evitar:$('#pp-evitar').value};
+    ocupado(pr.querySelector('button'), function(){ return chamar('salvarPerfilPresente', d).then(function(eu2){ S.eu=eu2; aviso('Perfil para presentes salvo.'); }); }); };
   function prefCompra(id, campo, msgSim, msgNao){ var el=$('#'+id); if(!el) return; el.onchange=function(){ var v=el.checked, d={grupoId:S.gid}; d[campo]=v;
     chamar('preferenciaAbraco', d).then(function(g2){ S.g=g2; aviso(v?msgSim:msgNao); }).catch(function(e){ el.checked=!v; falha(e); }); }; }
   prefCompra('pf-semab','sem','Pronto: você não será incluído(a) em um Abraço Garantido.','Pronto: você pode ser incluído(a) em um Abraço Garantido.');
