@@ -130,6 +130,12 @@ main{padding-bottom:calc(90px + var(--sab))}
 .abas button svg{width:22px;height:22px}
 .abas button[aria-current="true"]{color:var(--brasa)}
 .sub-abas{position:sticky;top:64px;z-index:15;background:var(--fundo);display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:12px 16px 10px;margin:0 -16px;border-bottom:1px solid var(--linha)}
+.tab-desemp{display:grid;font-size:13.5px;border:1px solid var(--linha);border-radius:12px;overflow:hidden;background:var(--cartao)}
+.tab-desemp>div{display:grid;grid-template-columns:minmax(0,1fr) 40px 56px 56px 56px;gap:6px;padding:7px 10px;border-top:1px solid var(--linha);align-items:center}
+@media (max-width:400px){.tab-desemp:not(.t3)>div{grid-template-columns:minmax(0,1fr) 30px 56px 56px}.tab-desemp:not(.t3)>div>span:nth-child(4){display:none}}
+.tab-desemp.t3>div{grid-template-columns:minmax(0,1fr) 70px 70px}
+.tab-desemp>div>span:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.tab-desemp>.td-cab{border-top:0;font-size:12px;color:var(--tinta-2);font-weight:600;background:var(--suave)}
 .sub-abas::-webkit-scrollbar{display:none}
 .sub-abas.mais{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent)}
 .sub-abas button{flex:none;border:1.5px solid var(--linha);background:var(--cartao);color:var(--tinta-2);border-radius:999px;padding:7px 13px;font-weight:600;font-size:13.5px;cursor:pointer;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
@@ -1701,6 +1707,11 @@ var Core = (function () {
     return api.painelGeral(a);
   };
   /* resumo das notificações de um grupo (só o administrador geral): quem tem aviso pelo app e/ou pelo Telegram */
+  /* Central → Desempenho: quanto tempo cada tipo de chamada leva no servidor (só nomes de chamada e tempos, de todo mundo junto) */
+  api.desempenho = function (a) {
+    var u = sessao(a.token); exigirSuper(u);
+    return P.desempenho ? P.desempenho(!!a.zerar) : { desde: '', itens: [], indisponivel: true };
+  };
   api.statusAvisos = function (a) {
     var u = sessao(a.token); exigirSuper(u);
     var us = {}; T('Usuarios').all().forEach(function (x) { us[norm(x.email)] = x; });
@@ -2095,6 +2106,12 @@ var Core = (function () {
       if (ant) r.anterior = { motivo: ant.motivo, devolvido: !!ant.devolvidoEm, devolvidoEm: ant.devolvidoEm, semPagamento: ant.pagamento === 'nao-recebido' };
     }
     if (minha && minha.status === 'liberado') r.opcoes = membros(g.id).filter(function (m) { return m.email !== u.email && !foraDaEscolha(g, m); }).map(function (m) { var pu = usuario(m.email) || {}; return { id: Cripto.hex(Cripto.sha256(Cripto.utf8(g.id + m.email))).substr(0, 12), nome: pu.nome || '' }; }).sort(function (p, q) { return p.nome.localeCompare(q.nome, 'pt-BR'); });
+    if (g.sorteioEm) {
+      // depois do sorteio a seção é só para consulta: a escolha comprada É o amigo secreto (fica na aba Amigo, protegida pela senha),
+      // e os dados do PIX não servem mais
+      delete r.escolhido; delete r.opcoes; r.pix = r.banco = r.agencia = r.conta = r.titular = '';
+      if (r.abraco) delete r.abraco.opcoes;
+    }
     return r;
   };
 
@@ -2351,7 +2368,7 @@ var Core = (function () {
     // campos que começam com "_" são marcas internas do servidor (ex.: _liberado, depois de conferida a senha): nunca valem vindos do aparelho
     if (args && typeof args === 'object') Object.keys(args).forEach(function (k) { if (k.charAt(0) === '_') delete args[k]; });
     try {
-      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|imagem|statusAvisos)$/.test(nome);
+      var escrita = !/^(info|grupo|eu|meuAmigo|conversas|mensagens|mural|resultado|folhaAuditor|lerLink|compraInfo|pedidosCompra|painelGeral|suporte|recados|recadosParticipantes|pacote|fotos|imagem|statusAvisos|desempenho)$/.test(nome);
       var r = escrita && P.travar ? P.travar(function () { return api[nome](args || {}); }) : api[nome](args || {});
       return { ok: nome === 'fotos' || nome === 'imagem' ? r : trocarFotos(r) };
     } catch (e) {
@@ -2550,7 +2567,12 @@ function ehCampo(el){ return el && (el.tagName==='TEXTAREA' || (el.tagName==='IN
 function avisarFoco(ev){
   if(!VIA_PORTAL || !ehCampo(ev.target)) return;
   focoAtual=ev.target;
-  try{ window.top.postMessage({flecha:'foco'}, PORTAL); }catch(e){}
+  // campo de escrever da conversa: manda a altura aprendida para a página de entrada encolher o app ANTES de o teclado subir
+  // (sem isso o iPhone empurrava a página por ~0,2 s); a barra de abas some no mesmo instante
+  var prever=0;
+  if(ev.type==='focusin' && ev.target.closest('.compor-wrap') && !document.body.classList.contains('tecl')){ prever=altPrevista(); if(prever>window.innerHeight-100) prever=0; }
+  if(prever) marcarTeclado(true);
+  try{ window.top.postMessage(prever? {flecha:'foco', prever:prever} : {flecha:'foco'}, PORTAL); }catch(e){}
 }
 document.addEventListener('focusin', avisarFoco);
 /* O iPhone, ao abrir o teclado, empurra a página inteira por um instante se o campo tocado estiver na parte da tela que o
@@ -2618,7 +2640,7 @@ function conectarPortal(pronto){
   if(!PORTAL || window.top===window.self) return pronto();
   var feito=false;
   function fim(){ if(feito) return; feito=true; window.removeEventListener('message', ouvir); pronto(); }
-  function ouvir(ev){ if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='dados') return; VIA_PORTAL=true; MEM=ev.data.dados||{}; PORTAL_ABRE_LINKS=ev.data.links===true;
+  function ouvir(ev){ if(ev.origin!==PORTAL || !ev.data || ev.data.flecha!=='dados') return; VIA_PORTAL=true; MEM=ev.data.dados||{}; PORTAL_ABRE_LINKS=ev.data.links===true; DIAG_PORTAL=ev.data.diag===true;
     // a página de entrada informa a altura da barrinha do iPhone: a barra de abas passa por trás dela
     var mg=ev.data.margens; if(mg && mg.base>0) document.documentElement.style.setProperty('--sab', Math.max(6, Math.round(mg.base-20))+'px');
     fim(); }
@@ -2860,6 +2882,14 @@ function moeda(v){ v=String(v||'').trim(); if(!v) return 'a definir'; return 'R$
 var S = { token:null, eu:null, gid:null, g:null, aba:'amigo', conv:null };
 /* Passes das conversas protegidas pela senha ("Meu amigo secreto"): ficam SÓ na memória, nunca guardados no aparelho.
    Somem ao sair da conta, ao fechar o app e quando ele fica mais de 2 minutos fora da tela. */
+/* Tempos das últimas chamadas NESTE aparelho (Central → Desempenho e diagnóstico do portal): nome da chamada, tempo total
+   (com a ida e volta pela internet) e tempo gasto no servidor. Só na memória; nada é enviado. */
+var TEMPOS=[], DIAG_PORTAL=false;
+function anotarTempo(nome, t0, r){
+  var tot=Date.now()-t0, srv=r && r.t && typeof r.t.s==='number'? r.t.s : null;
+  TEMPOS.push({n:nome, tot:tot, srv:srv, em:Date.now()}); if(TEMPOS.length>60) TEMPOS.shift();
+  if(VIA_PORTAL && DIAG_PORTAL){ try{ window.top.postMessage({flecha:'tempo', txt:nome+' '+tot+(srv!=null? '/'+srv : '')}, PORTAL); }catch(e){} }
+}
 var PASSES={}, CONVS_PROT={}, convProtAberta=null, convCont=null;
 function ehProtegida(e){ return !!e && /protegida pela sua senha/.test(e.message||''); }
 function chamar(nome, args){
@@ -2867,8 +2897,9 @@ function chamar(nome, args){
   if(args.conversaId && PASSES[args.conversaId] && !args.passe) args.passe=PASSES[args.conversaId];
   if(nome==='fotos') args.passes=PASSES;
   if(window.__TESTE_FALHA__===nome) return Promise.reject(new Error('Falha de conexão. Tente novamente.'));   // só para os testes automáticos
+  var t0=Date.now();
   return new Promise(function(res, rej){
-    function trata(r){ if(typeof r==='string') r=JSON.parse(r); if(r.erro){ if(/sessão expirou/.test(r.erro)){ sair(true); } rej(new Error(r.erro)); } else{ if(nome==='revelarAmigo' && r.ok && r.ok.passe) PASSES[r.ok.passe.conversaId]=r.ok.passe.passe; res(r.ok); } }
+    function trata(r){ if(typeof r==='string') r=JSON.parse(r); anotarTempo(nome, t0, r); if(r.erro){ if(/sessão expirou/.test(r.erro)){ sair(true); } rej(new Error(r.erro)); } else{ if(nome==='revelarAmigo' && r.ok && r.ok.passe) PASSES[r.ok.passe.conversaId]=r.ok.passe.passe; res(r.ok); } }
     if(GAS){ google.script.run.withSuccessHandler(trata).withFailureHandler(function(e){ rej(new Error('Falha de conexão. Tente novamente.')); }).api(nome, args); }
     else if(MODO_DEMO){ setTimeout(function(){ try{ trata(Core.chamar(nome, JSON.parse(JSON.stringify(args)))); }catch(e){ rej(e); } }, 90); }
     else rej(new Error('Servidor indisponível.'));
@@ -3349,7 +3380,7 @@ function abaAmigo(c, fresco){
       h+='<div class="bilhete" id="bil"><div class="coberto" id="bil-c">'+I.presente.replace('<svg','<svg style="color:var(--palha)"')+'<div class="rotulo">Seu amigo secreto está aqui</div><button class="btn" id="bil-ver">'+(a.protegido?'🔒 ':'')+'Toque para ver</button><div style="font-size:12.5px;opacity:.75">'+(a.protegido?'Protegido pela sua senha. Confira se ninguém está olhando a tela.':'Confira se ninguém está olhando a sua tela.')+'</div></div>'+
         '<div id="bil-r" hidden></div></div>';
     }
-    if((g.compraAtiva || g.abracoAtivo) && !a.sorteado) h+='<div class="secao" id="compra-box"></div>';
+    if(g.compraAtiva || g.abracoAtivo) h+='<div class="secao" id="compra-box"></div>';
     h+='<div class="secao"><h2>O que eu gostaria de ganhar</h2><div class="cartao pilha"><label class="campo">Suas sugestões aparecem para todos na lista do grupo e para quem tirou você'+'<textarea class="inp" id="des" maxlength="1500" placeholder="Ex.: livros de receitas, camisa tamanho M, vinho tinto…">'+esc(g.meusDesejos||'')+'</textarea></label><div class="linha-acoes"><button class="btn sec" id="des-ok">Salvar sugestões</button>'+(g.valorMinimo?'<span class="muted" style="font-size:13px">Valor mínimo do grupo: '+esc(moeda(g.valorMinimo))+'</span>':'')+'</div></div></div>';
     c.innerHTML=h;
     if($('#compra-box')) carregarCompra($('#compra-box'));
@@ -3417,7 +3448,8 @@ function ligarCopias(r){ $$('[data-copiar]', r).forEach(function(b){ b.onclick=f
 function carregarCompra(box){
   box.innerHTML=carregando();
   chamar('compraInfo',{grupoId:S.gid}).then(function(c){
-    if((!c.ativa && !c.abraco) || c.sorteado){ box.remove(); return; }
+    if(!c.ativa && !c.abraco){ box.remove(); return; }
+    if(c.sorteado){ box.innerHTML=compraEncerrada(c); return; }
     var h='';
     if(c.ativa){
     h+='<h2>Escolher quem eu vou tirar</h2>';
@@ -3457,6 +3489,28 @@ function carregarCompra(box){
       });
     };
   }).catch(function(e){ box.innerHTML=''; falha(e); });
+}
+
+/* Depois do sorteio a seção continua, só para consulta (sem botões). O nome da escolha comprada NÃO aparece aqui: é o amigo
+   secreto, que fica no alto da aba, protegido pela senha. */
+function textoAnterior(an, de){
+  return an.devolvido? 'O valor do seu pedido'+de+' foi <b>devolvido</b> em '+dataBR(an.devolvidoEm)+'.' : an.semPagamento? 'Seu pedido'+de+' foi encerrado sem pagamento.' :
+    (an.motivo==='cancelado'? 'Você cancelou o seu pedido'+de+'.' : 'Seu pedido'+de+' não pôde ser atendido.')+' Se você tinha feito o PIX, o administrador geral confere e, comprovado o pagamento, devolve o valor.';
+}
+function compraEncerrada(c){
+  var h='<h2>Compras</h2><div class="muted" style="font-size:13.5px;margin:-4px 0 12px">Encerradas com o sorteio. Fica aqui só para consulta.</div>';
+  if(c.ativa){
+    h+='<div class="cartao pilha compra-lida"><div class="rotulo">Escolher quem eu vou tirar · '+esc(c.valor)+'</div><div>'+
+      (c.status==='escolhido'? '<b>Você comprou a sua escolha.</b> O sorteio respeitou o que você escolheu: veja seu amigo secreto no alto desta aba.' :
+       c.anterior? textoAnterior(c.anterior,'') : 'Você não comprou a escolha.')+'</div></div>';
+  }
+  if(c.abraco){
+    var ab=c.abraco;
+    h+='<div class="cartao pilha compra-lida'+(ab.status==='escolhido'?' abraco-feito':'')+'"'+(c.ativa?' style="margin-top:10px"':'')+'><div class="rotulo">🤗 Abraço Garantido · '+esc(ab.valor)+'</div>'+
+      (ab.status==='escolhido' && ab.par? '<div style="font-family:var(--f-titulo);font-size:20px;line-height:1.25"><b>'+esc(ab.par.a)+'</b> tirou <b>'+esc(ab.par.b)+'</b></div><div class="muted">O sorteio respeitou o par que você escolheu. Ninguém sabe que foi você: guarde segredo e aproveite o abraço na revelação!</div>' :
+       '<div>'+(ab.anterior? textoAnterior(ab.anterior,' de Abraço Garantido') : 'Você não deu Abraço Garantido.')+'</div>')+'</div>';
+  }
+  return h;
 }
 
 /* ---------- Abraço Garantido (participante) ---------- */
@@ -4318,7 +4372,7 @@ function desenharCentral(c, pg){
     .sort(function(a,b){ return ((b.comprasPedido+b.devolucoes)-(a.comprasPedido+a.devolucoes)) || (a.id===S.gid?-1:b.id===S.gid?1:0); });
   var gsSup=pg.grupos.filter(function(x){ return x.suporte; }).sort(function(a,b){ return (b.suporte.pendente-a.suporte.pendente) || (b.suporte.em>a.suporte.em?1:-1); });
   function cont(n, alerta){ return n? ' <span class="cont'+(alerta?' alerta':'')+'">'+n+'</span>' : ''; }
-  var subs=[{id:'resumo',t:'Pendências',n:pd.total},{id:'compras',t:'Compras',n:pd.compras+pd.devolucoes},{id:'suporte',t:'Suporte',n:pd.suporte},{id:'grupos',t:'Grupos',n:pd.pedidosGrupo},{id:'notificacoes',t:'Notificações'}];
+  var subs=[{id:'resumo',t:'Pendências',n:pd.total},{id:'compras',t:'Compras',n:pd.compras+pd.devolucoes},{id:'suporte',t:'Suporte',n:pd.suporte},{id:'grupos',t:'Grupos',n:pd.pedidosGrupo},{id:'notificacoes',t:'Notificações'},{id:'desempenho',t:'Desempenho'}];
   var sub=S.subCentral && subs.some(function(x){ return x.id===S.subCentral; })? S.subCentral : 'resumo';
   function aba(id){ return id===sub? '' : ' hidden'; }
   // itens de pendência, cada um leva à sub-aba certa
@@ -4350,14 +4404,47 @@ function desenharCentral(c, pg){
   '<div data-sub="notificacoes"'+aba('notificacoes')+'><div class="secao"><h2>Notificações</h2>'+
     '<div class="estado" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="rotulo">Do aplicativo</div><div class="n" style="font-size:17px;padding-top:4px">'+(S.eu.pushDisponivel?'✅ ligadas':'⚠️ não configuradas')+'</div></div><div><div class="rotulo">Telegram</div><div class="n" style="font-size:17px;padding-top:4px">'+(S.eu.avisoDisponivel?'✅ ligado':'⚠️ não configurado')+'</div></div></div>'+
     '<div id="cn-resumo" style="margin-top:12px">'+carregando()+'</div>'+
-  '</div></div>';
+  '</div></div>'+
+  '<div data-sub="desempenho"'+aba('desempenho')+'><div class="secao" id="cd-box"></div></div>';
   ligarSubAbas(c, 'subCentral');
+  var bd=$('[data-sub-ir="desempenho"]',c); if(bd) bd.addEventListener('click', function(){ desenharDesempenho($('#cd-box',c)); });
+  if(sub==='desempenho') desenharDesempenho($('#cd-box',c));
   $$('[data-ir-sub]',c).forEach(function(b){ b.onclick=function(){ var t=$('[data-sub-ir="'+b.dataset.irSub+'"]',c); if(t) t.click(); }; });
   $$('[data-ped]',c).forEach(function(cx){ desenharPedidos($('.ped-box',cx), cx.dataset.ped, cx.dataset.sort==='1'); });
   $$('[data-supg]',c).forEach(function(bx){ chamar('suporte',{grupoId:bx.dataset.supg}).then(function(d){ desenharSuporte(bx, bx.dataset.supg, d); }).catch(function(){ bx.innerHTML='<div class="muted">Não foi possível carregar.</div>'; }); });
   desenharPainelGeral(pg);
   desenharResumoAvisos($('#cn-resumo',c), g);
 }
+/* Central → Desempenho: onde está a demora. "No servidor" junta as chamadas de todo mundo (só nomes e tempos);
+   "Neste aparelho" mostra as últimas chamadas daqui, com o tempo total (inclui a internet e o Google) e o do servidor. */
+var NOMES_CHAMADA={_abrir:'Abrir o app (página)', eu:'Entrar / atualizar dados', grupo:'Dados do grupo', meuAmigo:'Meu amigo', revelarAmigo:'Ver o amigo (com senha)',
+  conversas:'Lista de conversas', mensagens:'Abrir conversa', enviarMensagem:'Enviar mensagem', editarMensagem:'Editar mensagem', apagarMensagem:'Apagar mensagem',
+  liberarConversa:'Liberar conversa (senha)', mural:'Mural', publicarMural:'Publicar no mural', apagarMural:'Apagar do mural', fotos:'Fotos (miniaturas)', imagem:'Foto grande',
+  salvarDesejos:'Salvar sugestões', compraInfo:'Compras', painelGeral:'Central', desempenho:'Desempenho', pacote:'Carregar dados do grupo', statusAvisos:'Situação dos avisos', recados:'Recados', suporte:'Suporte', info:'Tela de entrada', entrar:'Entrar (senha)'};
+function nomeChamada(n){ return NOMES_CHAMADA[n] || n; }
+function seg(ms){ return ms==null? '—' : ms<1000? ms+' ms' : (ms/1000).toFixed(1).replace('.',',')+' s'; }
+function desenharDesempenho(box, zerar){
+  if(!box) return;
+  box.innerHTML='<h2>Desempenho</h2>'+carregando();
+  chamar('desempenho', zerar? {zerar:true} : {}).then(function(d){
+    var it=(d.itens||[]).sort(function(a,b){ return b.media-a.media; });
+    var h='<h2>Desempenho</h2><div class="muted" style="font-size:13.5px;margin:-4px 0 12px">Quanto tempo cada ação leva. Use para achar o que está demorando; nada aqui identifica as pessoas.</div>';
+    h+='<h3 style="margin:6px 0">No servidor, de todo mundo'+(d.desde? ' <span class="muted" style="font-weight:400;font-size:13px">desde '+esc(horaBR(d.desde))+'</span>' : '')+'</h3>';
+    h+= d.indisponivel? '<div class="cartao muted">Na demonstração não há servidor.</div>' : !it.length? '<div class="cartao muted">Ainda não há chamadas contadas.</div>' :
+      '<div class="tab-desemp" role="table"><div class="td-cab" role="row"><span>Ação</span><span>vezes</span><span>média</span><span>maior</span><span>planilha</span></div>'+
+      it.map(function(x){ return '<div role="row"><span>'+esc(nomeChamada(x.nome))+'</span><span>'+x.n+'</span><span><b>'+seg(x.media)+'</b></span><span>'+seg(x.max)+'</span><span>'+seg(x.leitMs+x.gravMs)+'</span></div>'; }).join('')+'</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-top:6px">"planilha" = parte do tempo gasta lendo e gravando a planilha. Os números somem sozinhos depois de 6 horas sem uso.</div>';
+    var meus=TEMPOS.slice(-15).reverse();
+    h+='<h3 style="margin:16px 0 6px">Neste aparelho, últimas ações</h3>'+(meus.length?
+      '<div class="tab-desemp t3" role="table"><div class="td-cab" role="row"><span>Ação</span><span>total</span><span>servidor</span></div>'+
+      meus.map(function(x){ return '<div role="row"><span>'+esc(nomeChamada(x.n))+'</span><span><b>'+seg(x.tot)+'</b></span><span>'+seg(x.srv)+'</span></div>'; }).join('')+'</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-top:6px">A diferença entre "total" e "servidor" é o caminho pela internet e pelo Google.</div>' : '<div class="cartao muted">Nenhuma ação ainda.</div>');
+    if(!d.indisponivel) h+='<button class="btn sec peq" id="cd-zerar" style="margin-top:12px">Zerar a contagem do servidor</button>';
+    box.innerHTML=h;
+    var z=$('#cd-zerar',box); if(z) z.onclick=function(){ desenharDesempenho(box, true); };
+  }).catch(function(e){ box.innerHTML='<h2>Desempenho</h2><div class="faixa erro">'+esc(e.message||e)+'</div>'; });
+}
+function horaBR(iso){ var d=new Date(iso); if(isNaN(d)) return ''; return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' às '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
 /* Central → Notificações: resumo do grupo e cartões coloridos (verde = tem aviso ativo) */
 function desenharResumoAvisos(box, g){
   if(!box) return;

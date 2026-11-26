@@ -108,7 +108,7 @@ if (busca) { try { history.replaceState(null, '', location.pathname); } catch (e
   q.delete('diag'); var r = q.toString(); busca = r ? '?' + r : ''; } catch (e) {} })();
 var DIAG = null;   // função de registro, só existe com o diagnóstico ligado
 function dg(ev, extra) { if (DIAG) DIAG(ev, extra); }
-var frame = document.getElementById('app');
+var frame = document.getElementById('app'), T_INICIO = Date.now();
 frame.src = APP + (busca || '');
 
 /* Conversa segura com o aplicativo: só aceita mensagens vindas do Google Apps Script */
@@ -117,15 +117,22 @@ window.addEventListener('message', function (ev) {
   if (!doGoogle(ev.origin) || !ev.data || !ev.data.flecha) return;
   if (ev.data.flecha === 'pedir') {
     appFonte = ev.source; appOrigem = ev.origin;
-    ev.source.postMessage({ flecha: 'dados', dados: lerTudo(), margens: margens(), links: true }, ev.origin);
+    ev.source.postMessage({ flecha: 'dados', dados: lerTudo(), margens: margens(), links: true, diag: !!DIAG }, ev.origin);
+    dg('APP', 'abriu em ' + (Date.now() - T_INICIO) + 'ms');
     esconderAbertura();
+  } else if (ev.data.flecha === 'tempo') {
+    // diagnóstico: tempo de cada chamada ao servidor (total/servidor, em ms)
+    dg('api', String(ev.data.txt || '').slice(0, 40));
   } else if (ev.data.flecha === 'base') {
     var capa = ev.data.modo === 'capa';
     document.body.classList.toggle('capa', capa); document.documentElement.classList.toggle('capa', capa);
   } else if (ev.data.flecha === 'foco') {
     // o teclado está abrindo: informa ao app a faixa visível (em coordenadas do app), algumas vezes enquanto ele sobe
-    var fonte = ev.source, origem = ev.origin; dg('FOCO');
-    [120, 380, 700].forEach(function (ms) { setTimeout(function () { informarVisivel(fonte, origem); }, ms); });
+    var fonte = ev.source, origem = ev.origin, prev = Math.round(+ev.data.prever || 0); dg('FOCO');
+    // campo de escrever da conversa (preso no fim do app): o app manda a altura que sobrou com o teclado da última vez e
+    // o app já é encolhido AGORA, antes de o teclado subir. Assim o campo já está acima do teclado e o iPhone não empurra a página.
+    if (prev >= 160 && !tecladoAberto() && !encolhido) { frame.style.height = prev + 'px'; frame.style.bottom = 'auto'; encolhido = true; previstoAte = Date.now() + 1200; dg('PREVE', prev + 'px'); }
+    (prev ? [120, 380, 700, 1300] : [120, 380, 700]).forEach(function (ms) { setTimeout(function () { informarVisivel(fonte, origem); }, ms); });
   } else if (ev.data.flecha === 'teclado') {
     dg('SAIU-FOCO'); voltarDepois(450);
   } else if (ev.data.flecha === 'abrir-link') {
@@ -195,10 +202,12 @@ function informarVisivel(fonte, origem) {
    Assim o cabeçalho continua no lugar e o campo fica logo acima do teclado, sem o iPhone empurrar a página inteira
    (que fazia o cabeçalho sumir e deixava um vão vazio). Se o iPhone insistir em deslizar a página, desiste nesta
    abertura do teclado e volta ao jeito antigo (app em altura cheia, o iPhone desliza a tela). */
-var encolhido = false, puxadas = 0, desistiu = false;
+var encolhido = false, puxadas = 0, desistiu = false, previstoAte = 0;
 function ajustarAoTeclado() {
   var v = window.visualViewport; if (!v) return;
   if (!tecladoAberto()) {
+    if (encolhido && Date.now() < previstoAte) return;   // encolhido de antemão: o teclado ainda está subindo
+    previstoAte = 0;
     if (encolhido) { encolhido = false; frame.style.height = ''; frame.style.bottom = ''; dg('SOLTA'); }
     puxadas = 0; desistiu = false; return;
   }
