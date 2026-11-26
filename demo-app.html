@@ -1376,9 +1376,8 @@ var Core = (function () {
   function passeDe(a, cid) { return (a && (a.passe || (a.passes && a.passes[cid]))) || ''; }
   function liberada(u, c, a) { return !conversaProtegida(c, u) || passeVale(u, c.id, passeDe(a, c.id)); }
   function exigirPasse(u, c, a) { if (!liberada(u, c, a)) erro('Esta conversa está protegida pela sua senha.'); }
-  /* ---------- Ideias de presente com IA (Gemini, plano gratuito; 26/11/2026) ----------
-     Decisão do Aloísio, ciente dos termos do plano gratuito (o Google usa o texto para melhorar produtos, com revisão humana).
-     Por isso: a IA recebe só o valor mínimo, o perfil para presentes e a lista de desejos do amigo — NUNCA nomes, e-mails, fotos,
+  /* ---------- Ideias de presente com IA (26/11/2026; hoje Claude Haiku 5.5, antes Gemini gratuito) ----------
+     Sigilo, seja qual for a IA (P.ia em gas.js): a IA recebe só o valor mínimo, o perfil para presentes e a lista de desejos do amigo — NUNCA nomes, e-mails, fotos,
      nem as alergias/restrições (vai só um aviso genérico). Só quem tirou pede, com a mesma proteção pela senha; nada é guardado. */
   var IA_POR_DIA = 5;
   function pedidoIA(g, perfil, desejos, outras) {
@@ -2628,7 +2627,7 @@ var P = {
   emailDe: function (nome) { var c = (typeof window !== 'undefined' && window.DEMO_CONFIG); return nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase() + '@' + (c ? c.dominio : 'familia.demo'); },
   telegramBot: function () { return 'FlechaSecretaBot'; },
   contar: (function () { var n = {}; return function (k, s, soma) { n[k] = Math.max(0, (n[k] || 0) + (soma == null ? 1 : soma)); return n[k]; }; })(),
-  /* Demonstração: não chama o Gemini de verdade; devolve ideias de exemplo, usando o que o pedido diz que a pessoa gosta */
+  /* Demonstração: não chama a IA de verdade; devolve ideias de exemplo, usando o que o pedido diz que a pessoa gosta */
   ia: function (texto) {
     var gosta = (String(texto).match(/Gosta de: ([^.\n]+)/) || [])[1] || '', primeiro = gosta.split(',')[0].trim();
     var precisa = (String(texto).match(/Está precisando de: ([^\n]+)/) || [])[1] || '';
@@ -4031,7 +4030,7 @@ function abaAjuda(c){
         '<b>Proteção pela senha:</b> o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Ela já vem ligada para todos, para que ninguém que pegue o seu celular descubra o seu amigo secreto. Quem preferir pode desligar no <b>Perfil</b> (também com a senha).',
         'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você. '+
         'No <b>Perfil</b>, o <b>Perfil para presentes</b> (opcional: idade, medidas, do que você gosta, o que está precisando e o que é melhor evitar) aparece só para quem tirou você.'+
-        'Ao ver o seu amigo secreto, o botão <b>Ideias de presente com IA</b> pede sugestões à IA Gemini, do Google (plano gratuito), usando só o valor mínimo e o perfil para presentes — nunca nomes, fotos nem alergias. Até 5 pedidos por dia; também dá para copiar o pedido e colar em outra IA.'
+        'Ao ver o seu amigo secreto, o botão <b>Ideias de presente com IA</b> pede sugestões à IA Claude, da Anthropic, usando só o valor mínimo e o perfil para presentes — nunca nomes, fotos nem alergias. Esses dados <b>não</b> são usados para treinar nem melhorar a IA. Até 5 pedidos por dia; também dá para copiar o pedido e colar em outra IA.'
       ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
       bloco('balao','Conversas', lst([
         'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
@@ -4166,7 +4165,7 @@ function secaoPerfilPresente(p){
     '<div class="rotulo-p">4. Estou precisando de…</div><div class="cartao pilha"><label class="campo">Coisas que estão me fazendo falta'+txt('pp-precisa','precisa',300,'Ex.: garrafa térmica, chinelo novo, carregador portátil',true)+'</label></div>'+
     '<div class="rotulo-p">5. Melhor evitar</div><div class="cartao pilha"><label class="campo">Não gosto / já tenho'+txt('pp-evitar','evitar',300,'Ex.: perfume, canecas',true)+'</label>'+
       '<label class="campo">Alergias e restrições'+txt('pp-restricoes','restricoes',200,'Ex.: não bebo álcool; alergia a amendoim')+'</label></div>'+
-    '<div class="faixa-ia">🤖 <b>Ideias com IA:</b> o que você escrever aqui (e na sua lista "O que eu gostaria de ganhar") pode ser enviado, <b>sem o seu nome</b>, à IA <b>Gemini, do Google</b> (plano gratuito, que pode usar o texto para melhorar os produtos dele), para sugerir presentes a quem tirou você. <b>Alergias e restrições não vão</b> para a IA. Não escreva nada que não queira compartilhar.</div>'+
+    '<div class="faixa-ia">🤖 <b>Ideias com IA:</b> o que você escrever aqui (e na sua lista "O que eu gostaria de ganhar") pode ser enviado, <b>sem o seu nome</b>, à IA <b>Claude, da Anthropic</b>, para sugerir presentes a quem tirou você. <b>Seus dados NÃO são usados para treinar nem melhorar a IA.</b> <b>Alergias e restrições não vão</b> para a IA. Não escreva nada que não queira compartilhar.</div>'+
     '<button class="btn">Salvar meu perfil para presentes</button></form></div>';
 }
 function lerPerfilPresente(){
@@ -4195,12 +4194,12 @@ function pedidoIdeias(a, g){
   l.push('Para cada ideia, diga o preço aproximado em reais, onde costuma ser encontrada no Brasil e por que combina com a pessoa.'+(a.desejos? ' Comece pelas ideias que estão na lista da pessoa.' : ''));
   return l.join('\n');
 }
-/* Ideias com o Gemini, dentro do app. O aviso aparece sempre no alto; na primeira vez neste aparelho é preciso marcar "Entendi".
-   As ideias ficam só na tela (não são guardadas). */
+/* Ideias com IA (Claude Haiku, da Anthropic, desde 26/11/2026), dentro do app. O aviso aparece sempre no alto; na primeira vez
+   neste aparelho é preciso marcar "Entendi" (chave nova "-2": o aviso mudou quando saiu o Gemini). As ideias ficam só na tela. */
 function janelaIdeiasIA(a){
-  var aceito=lsGet('flecha-ia-aceite')==='1', vistas=[];
+  var aceito=lsGet('flecha-ia-aceite2')==='1', vistas=[];
   modal('<h2>💡 Ideias de presente</h2>'+
-    '<div class="faixa-ia" id="ia-aviso">🤖 <b>Sobre estas ideias</b><br>São geradas pela IA <b>Gemini, do Google</b>, no plano gratuito. Vão só o valor mínimo, o perfil para presentes e a lista "O que eu gostaria de ganhar" do seu amigo — <b>nunca nomes, e-mails, fotos nem alergias</b>. No plano gratuito, o Google pode usar esse texto para melhorar os produtos dele, inclusive com leitura por pessoas. A IA pode errar: confira preços e lojas.'+
+    '<div class="faixa-ia" id="ia-aviso">🤖 <b>Sobre estas ideias</b><br>São geradas pela IA <b>Claude, da Anthropic</b> (o app paga pelo uso). Vão só o valor mínimo, o perfil para presentes e a lista "O que eu gostaria de ganhar" do seu amigo — <b>nunca nomes, e-mails, fotos nem alergias</b>. <b>Esses dados NÃO são usados para treinar nem melhorar a IA.</b> A IA pode errar: confira preços e lojas.'+
     '<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:600"><input type="checkbox" id="ia-ok"'+(aceito?' checked':'')+' style="width:18px;height:18px"> Entendi</label></div>'+
     (!a.perfil? '<div class="faixa info" id="ia-semperfil"><div>Seu amigo ainda <b>não preencheu o perfil para presentes</b>'+(a.desejos? '; as ideias vão usar só a lista "O que eu gostaria de ganhar".' : ' nem a lista de desejos, então as ideias serão gerais — e a IA sugere perguntas para você descobrir os gostos dele pela conversa, sem se identificar.')+'</div></div>' : '')+
     '<div id="ia-lista"></div>'+
@@ -4209,7 +4208,7 @@ function janelaIdeiasIA(a){
     '<button class="link" id="ia-copia" style="font-size:13px">Copiar o pedido para outra IA</button>'+
     '<button class="link" data-fechar style="font-size:13px">Fechar</button>', function(m, fechar){
     var ok=$('#ia-ok',m), ger=$('#ia-gerar',m), lista=$('#ia-lista',m), rest=$('#ia-rest',m);
-    ok.onchange=function(){ ger.disabled=!ok.checked; lsSet('flecha-ia-aceite', ok.checked?'1':null); };
+    ok.onchange=function(){ ger.disabled=!ok.checked; lsSet('flecha-ia-aceite2', ok.checked?'1':null); };
     $('#ia-copia',m).onclick=function(){ fechar(); janelaIdeias(a); };
     ger.onclick=function(){
       if(!ok.checked) return;
@@ -4231,6 +4230,7 @@ function janelaIdeiasIA(a){
 function janelaIdeias(a){
   var txt=pedidoIdeias(a, S.g);
   modal('<h2>💡 Pedir ideias à IA</h2><div class="muted" style="font-size:14px">O pedido abaixo já está pronto, <b>sem nenhum nome</b>. Copie e cole no aplicativo de inteligência artificial que você usa (Claude, ChatGPT, Gemini…). Não custa nada.</div>'+
+    '<div class="faixa-ia" style="font-size:12.5px">Atenção: aqui o texto sai do Flecha Secreta. Nos aplicativos de IA gratuitos, o que você cola <b>pode</b> ser usado para melhorar a IA deles. Para isso não acontecer, use o botão "Ideias de presente com IA", dentro do app.</div>'+
     '<textarea class="inp" id="ia-t" readonly style="min-height:190px;font-size:13.5px">'+esc(txt)+'</textarea>'+
     '<button class="btn" id="ia-copiar">Copiar pedido</button>'+
     '<div class="linha-acoes" style="justify-content:center"><button class="btn sec peq" id="ia-gemini">Abrir o Gemini</button><button class="btn sec peq" id="ia-abrir">Abrir o Claude</button></div>'+
@@ -4742,8 +4742,8 @@ function desenharDesempenho(box, zerar){
       meus.map(function(x){ return '<div role="row"><span>'+esc(nomeChamada(x.n))+'</span><span><b>'+seg(x.tot)+'</b></span><span>'+seg(x.srv)+'</span></div>'; }).join('')+'</div>'+
       '<div class="muted" style="font-size:12.5px;margin-top:6px">A diferença entre "total" e "servidor" é o caminho pela internet e pelo Google.</div>' : '<div class="cartao muted">Nenhuma ação ainda.</div>');
     if(d.ia){ var ie=d.ia.erro;
-      h+='<h3 style="margin:16px 0 6px">Ideias com IA (Gemini)</h3><div class="cartao pilha" style="font-size:13.5px;gap:4px">'+
-        '<div><b>Situação:</b> '+(d.ia.ativa? 'ligada (chave cadastrada)' : 'desligada (falta a chave GEMINI_KEY)')+'</div>'+
+      h+='<h3 style="margin:16px 0 6px">Ideias com IA (Claude Haiku)</h3><div class="cartao pilha" style="font-size:13.5px;gap:4px">'+
+        '<div><b>Situação:</b> '+(d.ia.ativa? 'ligada (chave cadastrada)' : 'desligada (falta a chave CLAUDE_KEY)')+'</div>'+
         (d.ia.modelo? '<div><b>Último modelo que funcionou:</b> '+esc(d.ia.modelo)+'</div>' : '')+
         (ie? '<div><b>Último erro:</b> '+esc(horaBR(ie.em))+' · código '+esc(ie.cod)+' · '+esc(ie.modelo||'')+'</div><div class="muted" style="font-size:12.5px;overflow-wrap:anywhere">'+esc(ie.msg||'')+'</div>' : '<div class="muted">Nenhum erro registrado.</div>')+'</div>'; }
     if(!d.indisponivel) h+='<button class="btn sec peq" id="cd-zerar" style="margin-top:12px">Zerar a contagem do servidor</button>';
