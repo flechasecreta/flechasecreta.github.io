@@ -167,6 +167,24 @@ main{padding-bottom:calc(90px + var(--sab))}
 .cp-liga input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--mata-2)}
 .sub-abas .cont{font-size:11.5px;background:color-mix(in srgb,currentColor 14%,transparent);border-radius:999px;padding:0 7px;line-height:18px}
 .sub-abas .cont.alerta{background:var(--brasa);color:#fff}
+.sub-abas .ponto{width:8px;height:8px;border-radius:50%;background:var(--brasa);flex:none}
+.dica-avisos summary{cursor:pointer}
+.passos{display:grid;gap:8px}
+.passo{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--linha);border-radius:12px;background:var(--cartao)}
+.passo .pm{font-size:20px;flex:none;width:24px;text-align:center}
+.passo .pt{flex:1;min-width:0;font-size:14px}
+.passo .pt .muted{font-size:12.5px}
+.passo.ok .pt b{color:var(--tinta-2);font-weight:600}
+.passo .btn{flex:none}
+.aj-busca{position:relative}
+.quem-ve{display:grid;gap:0;font-size:14px}
+.quem-ve>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:10px;padding:9px 0;border-top:1px solid var(--linha)}
+.quem-ve>div:first-child{border-top:0}
+.quem-ve b{font-weight:600}
+.aj-passos-num{display:block;margin:-2px 0 4px;font-size:13px}
+.ajuda ol{margin:0;padding-left:20px;display:grid;gap:6px}
+.ajuda .ir{margin-top:10px;justify-self:start}
+.realce{outline:3px solid var(--palha);outline-offset:3px;border-radius:12px}
 .filtro-part{display:grid;gap:8px}
 .part-adm{align-items:center;padding:10px 12px}
 .part-adm .seta{font-size:24px;color:var(--tinta-2);align-self:center;line-height:1}
@@ -1104,7 +1122,7 @@ var Core = (function () {
     if (P.pushAparelhos) {
       var ap = P.pushAparelhos(Cripto.idPush(email));
       if (ap === null) linhas.push('Não foi possível consultar os aparelhos.');
-      else if (!ap.length) linhas.push('Nenhum aparelho cadastrado. A pessoa precisa tocar em Desativar e depois em Ativar notificações, no Perfil.');
+      else if (!ap.length) linhas.push('Nenhum aparelho cadastrado. A pessoa precisa tocar em Desativar e depois em Ativar notificações, em Perfil → Avisos.');
       else ap.forEach(function (sb) { linhas.push((sb.enabled && sb.notification_types > 0 ? '📱 Ativo: ' : '📵 Inativo: ') + nomeAparelho(sb)); });
     }
     return linhas.join('\n');
@@ -1976,10 +1994,10 @@ var Core = (function () {
     if (!t) erro('Escreva a resposta.');
     T('Recados').insert({ id: Cripto.token().substr(0, 12), grupoId: g.id, participante: alvo, de: 'a', autor: u.email, texto: t.substr(0, 3000), em: agora(),
       resp: respostaValida(recadosDoGrupo(g.id).filter(function (r) { return r.participante === alvo; }), a.respostaA) });
-    avisar(alvo, 'Resposta dos administradores 💬', nomeDe(u.email) + ': "' + resumo(t, 140) + '" Veja na aba Perfil.');
+    avisar(alvo, 'Resposta dos administradores 💬', nomeDe(u.email) + ': "' + resumo(t, 140) + '" Veja no fim da aba Ajuda.');
     P.enviarEmail({ para: alvo, responderPara: u.email, assunto: APP_NOME + ': resposta dos administradores (' + g.nome + ')', html: moldura('Resposta dos administradores',
       '<p><b>' + esc(nomeDe(u.email)) + '</b>, administrador do grupo, respondeu à sua mensagem:</p><div style="white-space:pre-wrap;background:#f3efe6;border-radius:10px;padding:14px 16px;margin:12px 0">' + esc(t) + '</div>' +
-      '<p>Você pode ver e continuar a conversa no aplicativo, na aba <b>Perfil</b>.</p>' + botao(P.urlApp(), 'Abrir o aplicativo'), g) });
+      '<p>Você pode ver e continuar a conversa no aplicativo, no fim da aba <b>Ajuda</b>, em <b>Fale com os administradores</b>.</p>' + botao(P.urlApp(), 'Abrir o aplicativo'), g) });
     log(u.email, 'respondeu-participante', alvo);
     return conversasRecados(g, u.email);
   };
@@ -4002,7 +4020,7 @@ function mostrarBoasVindas(papeis){
       '<li>🎁 <b>Conte o que gostaria de ganhar</b>, na aba Meu amigo. Ajuda muito quem tirar você!</li>'+
       '<li>📣 <b>Deixe um recado no Mural</b>, com seu nome ou anônimo. Vale dar pistas, provocar e brincar.</li>'+
       '<li>🤫 <b>Depois do sorteio</b>, converse em segredo com o seu amigo secreto e com quem tirou você.</li>'+
-      '<li>🔔 <b>Ative as notificações</b> (no Perfil) para não perder nenhuma novidade.</li></ul>'+
+      '<li>🔔 <b>Ative as notificações</b> (em Perfil → Avisos) para não perder nenhuma novidade.</li></ul>'+
       '<div>Participe, interaja e divirta-se: quanto mais gente animada, mais gostoso fica! '+esc(encontroTexto(g))+'</div>';
   } else {
     h+='<div class="selo">✨</div><h2>Uma novidade para você'+(nome?', '+esc(nome):'')+'!</h2>';
@@ -4016,65 +4034,141 @@ function mostrarBoasVindas(papeis){
   chamar('vistoBoasVindas',{grupoId:S.gid}).catch(function(){});
 }
 
-/* ---------- aba: ajuda ---------- */
+/* ---------- aba: ajuda ----------
+   Refeita em 26/11/2026 para resolver problemas: primeiros passos (com "Fazer agora"), busca, "Algo não está funcionando?",
+   "Quem vê o quê", como funciona cada aba e, no fim, "Fale com os administradores" (antes ficava no Perfil). */
+function semAcento(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+/* leva a pessoa ao lugar certo: "perfil:avisos" (sub-aba do Perfil), "admin:mensagens" (sub-aba), "amigo:des" (campo da aba) */
+function irPara(alvo){
+  var p=String(alvo).split(':'), aba=p[0], sub=p[1]||'';
+  if(aba==='perfil' && sub) S.subPerfil=sub;
+  mostrarAba(aba);
+  if(!sub || aba==='perfil') return;
+  var n=0; (function ver(){
+    var bt=$('#ad-nav [data-sub-ir="'+sub+'"]'), el=bt? null : document.getElementById(sub);
+    if(bt){ bt.click(); return; }
+    if(el){ el.scrollIntoView({block:'center'}); el.classList.add('realce'); setTimeout(function(){ el.classList.remove('realce'); }, 2200); return; }
+    if(++n<40) setTimeout(ver, 100);
+  })();
+}
 function abaAjuda(c){
-  var g=S.g;
-  function bloco(ic, tit, corpo, extra){ return '<details'+(extra||'')+'><summary>'+(I[ic]||'')+esc(tit)+'</summary><div class="corpo">'+corpo+'</div></details>'; }
+  var g=S.g, eu=S.eu||{}, membro=g.souMembro && !g.suporte;
+  function bloco(ic, tit, corpo, extra){ return '<details'+(extra||'')+'><summary>'+(I[ic]||ic||'')+esc(tit)+'</summary><div class="corpo">'+corpo+'</div></details>'; }
   function lst(itens){ return '<ul>'+itens.map(function(x){ return '<li>'+x+'</li>'; }).join('')+'</ul>'; }
-  var h='<div class="secao ajuda"><h2>Ajuda</h2><div class="muted" style="margin-top:-6px">Como funciona cada parte do Flecha Secreta. Toque num assunto para abrir.</div>';
+  function passos(itens){ return '<ol>'+itens.map(function(x){ return '<li>'+x+'</li>'; }).join('')+'</ol>'; }
+  function ir(alvo, txt){ return '<button type="button" class="btn sec peq ir" data-ir="'+alvo+'">'+txt+'</button>'; }
+  function secao(id, tit, corpo){ return '<div class="aj-sec" id="'+id+'"><h2 style="font-size:19px;margin-top:8px">'+tit+'</h2><div>'+corpo+'</div></div>'; }
+  var h='<div class="secao ajuda"><h2>Ajuda</h2><div class="muted" style="margin-top:-6px">Comece pelos seus primeiros passos ou procure o que precisa. Toque num assunto para abrir.</div>';
+
+  /* 1. primeiros passos: lista que se marca sozinha */
+  if(membro) h+='<div id="aj-passos"></div>';
+
+  /* 2. busca */
+  h+='<label class="campo aj-busca">Procure um assunto<input class="inp" id="aj-busca" type="search" enterkeyhint="search" autocomplete="off" placeholder="Ex.: senha, aviso, foto, presente"></label>'+
+    '<div class="faixa info" id="aj-nada" hidden><div>Não achamos nada com essa palavra. Tente outra, mais curta, ou escreva para '+(g.souAdmin?'o administrador geral':'os administradores')+' no fim desta página.</div></div>';
+
+  /* 3. problemas, com o passo a passo da solução */
+  var iconeTxt='<div><b>iPhone:</b> abra <b>flechasecreta.github.io</b> no <b>Safari</b>, toque em <b>Compartilhar</b> (o quadrado com a seta para cima) e escolha <b>Adicionar à Tela de Início</b>. Depois, abra sempre pelo ícone que apareceu.</div>'+
+    '<div><b>Android:</b> abra o endereço no <b>Chrome</b>, toque nos três pontinhos (⋮) e escolha <b>Adicionar à tela inicial</b> ou <b>Instalar app</b>.</div>'+
+    '<div class="muted" style="font-size:13px">Pelo ícone, o app abre mais rápido, você não precisa digitar a senha toda vez e pode receber os avisos no celular.</div>';
+  h+=secao('aj-problemas','🛠️ Algo não está funcionando?',
+    bloco('🔔 ','Não recebo os avisos no celular', passos([
+      'Abra o Flecha Secreta pelo <b>ícone na tela de início</b>, e não pelo navegador. (Ainda não tem o ícone? Veja “Como coloco o Flecha Secreta na tela de início?”, mais abaixo.)',
+      'Vá em <b>Perfil → Avisos</b> e toque em <b>Ativar notificações</b>. Toque em <b>Permitir</b> e confirme a pergunta do celular.',
+      'Toque em <b>Enviar teste</b>. Se o teste chegar, está tudo certo.',
+      '<b>iPhone com Foco</b> (Trabalho, Dormir, Não Perturbe…): o Foco segura os avisos. Em <b>Ajustes → Foco</b>, toque no Foco que você usa → <b>Apps</b> → <b>Adicionar</b> → <b>Flecha Secreta</b>.',
+      '<b>iPhone com Resumo Agendado:</b> em <b>Ajustes → Notificações → Resumo Agendado</b>, deixe o Flecha Secreta fora do resumo.',
+      '<b>Android:</b> em <b>Configurações → Apps</b>, abra o Chrome (ou o Flecha Secreta), ligue as <b>Notificações</b> e, em <b>Bateria</b>, escolha <b>Sem restrições</b>.'
+    ])+'<div class="muted" style="font-size:13px">No iPhone, é preciso o iOS 16.4 ou mais novo. Se nada disso der certo, use o <b>Telegram</b>, também em Perfil → Avisos.</div>'+ir('perfil:avisos','Abrir Perfil → Avisos'))+
+    bloco('🔑 ','Esqueci minha senha', passos([
+      'Em <b>Perfil → Eu</b>, toque em <b>Sair desta conta</b>.',
+      'Na tela de entrada, toque em <b>Esqueci minha senha</b> e digite o seu e-mail.',
+      'Abra o e-mail que vai chegar (olhe também no Spam e em Promoções) e crie uma senha nova.'
+    ])+'<div class="muted" style="font-size:13px">Lembra a senha e só quer trocar? Use <b>Trocar senha</b>, em Perfil → Eu.</div>'+ir('perfil:eu','Abrir Perfil → Eu'))+
+    bloco('🔒 ','O app pede minha senha para ver o amigo secreto', '<div>É a <b>proteção do amigo secreto</b>, que já vem ligada para todos: quem pegar o seu celular não descobre quem você tirou. A senha é a mesma que você usa para entrar no Flecha Secreta.</div>'+
+      lst(['Não lembra a senha? Veja “Esqueci minha senha”, logo acima.', 'Prefere sem a proteção? Desligue em <b>Perfil → Privacidade</b> (também pede a senha).', 'A conversa <b>Meu amigo secreto</b> segue a mesma proteção e se fecha sozinha se o app ficar mais de 2 minutos fora da tela.'])+ir('perfil:privacidade','Abrir Perfil → Privacidade'))+
+    bloco('✉️ ','Não recebi o e-mail do sorteio ou do convite', lst([
+      'Procure no <b>Spam</b>, no <b>Lixo eletrônico</b> e em <b>Promoções</b>.',
+      'O seu amigo secreto também aparece aqui no app, na aba <b>Meu amigo</b>. O e-mail é só uma cópia.',
+      'Se precisar, peça aos administradores para reenviar.']))+
+    bloco('🐢 ','O app está lento, travado ou não abre', passos([
+      'Confira a internet do celular (abra outro site para testar).',
+      'Feche o Flecha Secreta de vez (no iPhone, deslize o app para cima na lista de apps abertos) e abra de novo pelo ícone.',
+      'A primeira abertura do dia pode levar alguns segundos a mais. Espere um pouco antes de tocar de novo.',
+      'Continua? Conte para os administradores, no fim desta página, o que aparece na tela.'
+    ]))+
+    bloco('✏️ ','Mandei uma mensagem errada', '<div>Toque na mensagem (nas Conversas) ou em <b>Editar</b> (no Mural) para corrigir até <b>10 minutos</b> depois de enviar. Depois disso, ainda dá para apagar, desde que ninguém tenha respondido.</div>')+
+    bloco('📲 ','Como coloco o Flecha Secreta na tela de início?', iconeTxt, ' id="aj-icone"')+
+    bloco('📧 ','Mudei de e-mail', '<div>Em <b>Perfil → Eu</b>, toque em <b>Trocar meu e-mail</b>. Enviamos um link para o e-mail novo, e a troca acontece quando você clicar nele. Senha, conversas e amigo secreto continuam iguais.</div>'+ir('perfil:eu','Abrir Perfil → Eu'))
+  );
+
+  /* 4. quem vê o quê */
+  var qv=[
+    ['Quem você tirou', 'Só você'+(eu.protegeAmigo?', depois da sua senha':'')+'. Nem os administradores sabem.'],
+    ['Quem tirou você', 'Ninguém, até a revelação.'],
+    ['“O que eu gostaria de ganhar”', 'Todo o grupo, inclusive quem tirou você.'],
+    ['Perfil para presentes', 'Só quem tirou você, depois do sorteio.'],
+    ['Mensagem anônima', 'Quem recebe vê “Remetente anônimo”. Ninguém descobre quem mandou, nem os administradores.'],
+    ['Suas conversas', 'Só você e a outra pessoa. Os administradores não leem.'],
+    ['Seu celular', 'Só os administradores.'],
+    ['Ideias de presente com IA', 'A IA recebe só o valor mínimo, o perfil para presentes e a lista de sugestões, sem nomes, e-mails, fotos nem alergias. Esses dados não são usados para treinar a IA.'],
+    ['A lista de quem tirou quem', 'Abre para todos no dia seguinte à revelação.']
+  ];
+  h+=secao('aj-quem','👀 Quem vê o quê',
+    bloco('🔐 ','O que cada pessoa pode ver', '<div class="quem-ve">'+qv.map(function(x){ return '<div><b>'+x[0]+'</b><span>'+x[1]+'</span></div>'; }).join('')+'</div>')+
+    bloco('🎲 ','Os administradores sabem quem eu tirei?', '<div>Não. Ninguém vê quem tirou quem, nem os administradores. A lista completa só abre no dia seguinte à revelação, quando a brincadeira já acabou.</div>')+
+    bloco('🕶️ ','Mensagem anônima é anônima mesmo?', '<div>Sim. Quem recebe vê só “Remetente anônimo”, e ninguém consegue descobrir quem escreveu. Só cuidado com o que <b>você</b> escreve ou mostra numa foto: o jeito de escrever, a letra ou o ambiente podem dar pistas.</div>')
+  );
+
+  /* 5. como funciona cada aba (mais curto) */
   if(!g.suporte){
-    h+='<div>'+
-      bloco('alvo','Meu amigo', lst([
-        'Antes do sorteio, mostra a data, o horário, o local e o valor mínimo do presente.',
-        'Depois do sorteio, toque em <b>Toque para ver</b> para descobrir quem você tirou (confira se ninguém está olhando a tela!). Aparecem também as sugestões de presente dessa pessoa. O nome some sozinho em 20 segundos.',
-        '<b>Proteção pela senha:</b> o nome de quem você tirou só aparece depois de digitar a senha que você usa para entrar no app. Ela já vem ligada para todos, para que ninguém que pegue o seu celular descubra o seu amigo secreto. Quem preferir pode desligar no <b>Perfil</b> (também com a senha).',
-        'Em <b>O que eu gostaria de ganhar</b>, escreva suas sugestões. Todos veem na aba Grupo, inclusive quem tirou você. '+
-        'No <b>Perfil</b>, o <b>Perfil para presentes</b> (opcional: idade, medidas, do que você gosta, o que está precisando e o que é melhor evitar) aparece só para quem tirou você.'+
-        'Ao ver o seu amigo secreto, o botão <b>Ideias de presente com IA</b> pede sugestões à IA Claude, da Anthropic, usando só o valor mínimo e o perfil para presentes — nunca nomes, fotos nem alergias. Esses dados <b>não</b> são usados para treinar nem melhorar a IA. Até 5 pedidos por dia; também dá para copiar o pedido e colar em outra IA.'
-      ].concat(g.abracoAtivo? ['<b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas do grupo. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Se não quiser ser incluído(a), marque a opção no Perfil.':'')] : []).concat(g.compraAtiva? ['<b>Compra de escolha:</b> neste grupo, quem quiser pode pagar para escolher quem vai tirar, antes do sorteio. As vagas são limitadas. Só o administrador geral sabe quem pagou, e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Se não quiser ser escolhido(a), marque a opção no Perfil.':'')] : [])))+
+    h+=secao('aj-abas','📱 Como funciona cada aba',
+      bloco('alvo','Meu amigo', passos([
+        'Antes do sorteio: data, horário, local e valor mínimo do presente.',
+        'Depois do sorteio: toque em <b>Toque para ver</b> (confira se ninguém está olhando a tela). O nome some sozinho em 20 segundos.',
+        'Escreva em <b>O que eu gostaria de ganhar</b> as suas sugestões: todos veem, inclusive quem tirou você.',
+        'Ao ver o amigo, use <b>Ideias de presente com IA</b> para receber sugestões (até 5 pedidos por dia).'
+      ])+(g.abracoAtivo? '<div><b>🤗 Abraço Garantido:</b> antes do sorteio, quem quiser pode pagar para escolher <b>quem vai tirar quem</b> entre outras duas pessoas. Ninguém fica sabendo quem pagou nem qual foi o par.'+(g.abracoOptOut?' Para ficar de fora, use Perfil → Privacidade.':'')+'</div>' : '')+
+        (g.compraAtiva? '<div><b>Compra de escolha:</b> antes do sorteio, quem quiser pode pagar para escolher quem vai tirar. As vagas são limitadas e ninguém vê quem cada um escolheu.'+(g.compraOptOut?' Para não ser escolhido(a), use Perfil → Privacidade.':'')+'</div>' : '')+
+        ir('amigo:des','Escrever o que eu gostaria de ganhar'))+
       bloco('balao','Conversas', lst([
-        'Depois do sorteio surgem duas conversas especiais: <b>Meu amigo secreto</b> (ele não sabe que é você) e <b>Quem me tirou</b> (você não sabe quem é).',
-        'A conversa <b>Meu amigo secreto</b> também é protegida pela senha, porque o que ele escreve pode revelar quem ele é: na lista aparece “🔒 Protegida pela sua senha” no lugar da última mensagem e, para abrir, o app pede a sua senha. Ela se fecha sozinha se o aplicativo ficar mais de 2 minutos fora da tela. (Vale para quem está com a proteção ligada no Perfil; <b>Quem me tirou</b> e as outras conversas abrem direto.)',
-        'Em <b>Nova mensagem</b>, escreva para qualquer pessoa do grupo, com seu nome ou anonimamente.',
-        '<b>Toque numa mensagem</b> para responder (citando a mensagem), editar (até 10 minutos depois de enviar) ou apagar. Mensagem que já foi respondida não pode mais ser apagada.',
-        '<b>Fotos:</b> toque no botão da câmera, ao lado do campo de texto, para <b>escolher uma foto da galeria</b> ou <b>tirar uma foto na hora</b>. Você também pode <b>colar</b> uma imagem copiada direto no campo de texto. É uma foto por mensagem, com ou sem texto junto. Toque na foto recebida para ver maior.',
-        'A foto é reduzida no seu aparelho antes de enviar, e os dados escondidos do arquivo (local onde foi tirada, modelo do celular) são removidos. Mesmo assim, em conversa <b>anônima</b>, cuidado: o que aparece na foto (ambiente, letra, objetos) pode revelar quem você é.',
-        'Apagar a mensagem apaga também a foto. Vídeos, PDFs e outros documentos ainda não podem ser enviados.',
-        '<b>Links:</b> um endereço escrito na mensagem (começando com <b>https://</b>, <b>http://</b> ou <b>www.</b>) vira um link sublinhado. Toque nele para abrir no navegador, fora do aplicativo; para voltar, feche a página que abriu.',
-        'A mensagem enviada aparece na hora, marcada “enviando…”, enquanto vai para o servidor. Se o envio falhar, o texto volta para o campo e aparece um aviso.',
-        'A bolinha vermelha na aba avisa que há mensagem nova.',
-        'Ninguém, nem os administradores, consegue ler as conversas dos outros.'
+        '<b>Meu amigo secreto:</b> você conversa com quem tirou, sem ele saber que é você. <b>Quem me tirou:</b> você conversa com quem tirou você, sem saber quem é.',
+        '<b>Nova mensagem:</b> escreva para qualquer pessoa do grupo, com seu nome ou anônimo.',
+        '<b>Toque numa mensagem</b> para responder, editar (até 10 minutos) ou apagar (enquanto ninguém respondeu).',
+        '<b>Fotos:</b> toque na câmera, ao lado do campo de texto, para escolher da galeria ou tirar na hora (também dá para colar). O app tira da foto o local e o modelo do celular.',
+        '<b>Links</b> que começam com https://, http:// ou www. viram sublinhados e abrem fora do app.',
+        'A bolinha vermelha na aba avisa que há mensagem nova.'
       ]))+
       bloco('mural','Mural', lst([
-        'Recados para o grupo todo, com seu nome ou anônimos.',
-        'Endereços de sites escritos no recado viram <b>links</b>: toque para abrir no navegador.',
-        'O botão da câmera junta uma <b>foto</b> ao recado (da galeria, tirada na hora ou colada no campo de texto). Você pode remover a foto de um recado seu; os administradores podem remover qualquer foto do mural.',
-        '<b>Responder</b> cita o recado original. Seus recados podem ser <b>editados</b> até 10 minutos depois e apagados enquanto ninguém tiver respondido.',
-        'Os recados dos administradores aparecem com destaque dourado. Os administradores podem apagar qualquer recado.'
+        'Recados para o grupo todo, com seu nome ou anônimos, com foto e links.',
+        '<b>Responder</b> cita o recado. Os seus podem ser editados por 10 minutos e apagados enquanto ninguém respondeu.',
+        'Os recados dos administradores aparecem em dourado.'
       ]))+
       bloco('pessoas','Grupo', lst([
-        'A lista de todos os participantes, com quem é administrador e quem é o auditor.',
-        'Os cartões com borda dourada são de quem já deixou sugestões de presente.',
-        'Toque em alguém para ver as sugestões, <b>ampliar a foto</b> ou enviar uma mensagem.'
+        'Todos os participantes. Borda dourada = já deixou sugestões de presente.',
+        'Toque em alguém para ver as sugestões, ampliar a foto ou mandar mensagem.'
       ]))+
       bloco('eu','Perfil', lst([
-        'Coloque sua foto e ajuste seu nome'+(g.telefoneLiberado?' e seu celular':'')+'.',
-        '<b>Trocar meu e-mail:</b> enviamos um link de confirmação para o e-mail novo.',
-        '<b>Notificações no celular:</b> ative no Perfil para receber os avisos.',
-        '<b>Fale com os administradores:</b> mande dúvidas e sugestões para quem organiza o grupo. A resposta aparece ali e chega por e-mail.',
-        'Troque sua senha ou saia da conta.'
+        '<b>👤 Eu:</b> foto, nome'+(g.telefoneLiberado?', celular':'')+', e-mail de acesso, trocar senha e sair.',
+        '<b>🎁 Presentes:</b> o perfil para presentes (idade, medidas, gostos, o que está precisando e o que evitar). Só quem tirou você vê.',
+        '<b>🔔 Avisos:</b> notificações no celular, Telegram e a prévia das mensagens nos avisos.',
+        '<b>🔒 Privacidade:</b> a proteção do amigo secreto pela senha'+((g.compraAtiva&&g.compraOptOut)||(g.abracoAtivo&&g.abracoOptOut)?' e as opções de ficar de fora da compra de escolha ou do Abraço Garantido':'')+'.',
+        'Uma bolinha vermelha na sub-aba indica que falta algo ali.'
       ]))+
-    '</div>';
+      bloco('ajuda','O que é o “círculo único”?', '<div>A tira B, B tira C, C tira D… e o último tira A. Na revelação, quem foi tirado é o próximo a revelar, e a roda só fecha na última pessoa. Se fechar antes, alguém trocou de amigo secreto, e o Auditor descobre! 😉 Por isso não dá para trocar de amigo depois do sorteio.</div>')
+    );
   }
-  if(g.souAuditor) h+='<h2 style="font-size:19px;margin-top:8px">Para você, Auditor</h2><div>'+
+
+  /* 6. papéis */
+  if(g.souAuditor) h+=secao('aj-auditor','Para você, Auditor',
     bloco('prancheta','Aba Auditor', lst([
       'Antes da revelação, imprima a <b>Folha do Auditor</b> (A4). Ela traz uma linha para cada participante.',
       'Na revelação, anote na ordem quem revela e quem cada um tirou. O próximo a revelar é sempre o amigo secreto do anterior.',
       'Se o círculo voltar ao primeiro antes da última linha, alguém trocou de amigo secreto: houve trapaça! 😈',
       'A partir do dia da revelação, registre no aplicativo se houve trapaça. Todos verão o aviso no topo do grupo.',
       'No dia seguinte à revelação, a aba mostra o <b>resultado oficial completo</b>'+(g.compraAtiva?' e o resumo das compras de escolha (quantidade e total arrecadado)':'')+'.'
-    ]), ' class="papel-ajuda" open')+'</div>';
-  if(g.souAdmin) h+='<h2 style="font-size:19px;margin-top:8px">Para você, administrador</h2><div>'+
+    ]), ' class="papel-ajuda"'));
+  if(g.souAdmin) h+=secao('aj-admin','Para você, administrador',
     bloco('escudo','Participantes e convites', lst([
       'A aba <b>Admin</b> é dividida em seções no topo: <b>Resumo</b>, <b>Participantes</b>, <b>Mensagens</b>, <b>Compra de escolha</b> e <b>Dados do grupo</b>.',
       'Em Participantes, use a busca e o filtro <b>Não confirmaram</b>, e toque na pessoa para ver as opções.',
@@ -4095,31 +4189,70 @@ function abaAjuda(c){
       'Depois da revelação, crie a <b>edição do próximo ano</b> com os mesmos participantes.'
     ]), ' class="papel-ajuda"')+
     bloco('escudo','Mensagens', lst([
-      '<b>Mensagens dos participantes:</b> o que os participantes escrevem em “Fale com os administradores” chega em Admin > Mensagens, por e-mail e nas notificações. Toque numa mensagem para responder, editar (até 10 minutos) ou apagar.',
+      '<b>Mensagens dos participantes:</b> o que os participantes escrevem em “Fale com os administradores” (no fim da Ajuda) chega em Admin → Mensagens, por e-mail e nas notificações. Toque numa mensagem para responder, editar (até 10 minutos) ou apagar.',
       '<b>Falar com o administrador geral:</b> para dúvidas, problemas ou sugestões sobre o próprio aplicativo.'
     ]), ' class="papel-ajuda"')+
-    (S.g && S.g.souMestre? bloco('central','Aba Central (administrador geral)', lst([
+    (g.souMestre? bloco('central','Aba Central (administrador geral)', lst([
       '<b>Pendências:</b> tudo o que espera por você, em todos os grupos. Toque num item para ir direto ao lugar certo.',
       '<b>Compras:</b> confira o PIX no banco e libere, recuse ou registre a devolução dos pedidos de compra de escolha e de Abraço Garantido de todos os grupos.',
       '<b>Suporte:</b> as conversas com os administradores dos grupos.',
       '<b>Grupos:</b> pedidos de novos grupos, convites para líderes e a lista de todos os grupos.',
-      '<b>Notificações:</b> mande um aviso de teste para alguém e veja quais aparelhos dessa pessoa estão cadastrados.'
-    ]), ' class="papel-ajuda"') : '')+'</div>';
-  var nf=0; function faq(t, corpo){ nf++; return bloco('ajuda', nf+'. '+t, corpo); }
-  h+='<h2 style="font-size:19px;margin-top:8px">Perguntas frequentes</h2><div>'+
-    faq('Esqueci minha senha. E agora?', '<div>Na tela de entrada, toque em <b>Esqueci minha senha</b> e informe seu e-mail. Você recebe um link para criar uma senha nova.</div>')+
-    faq('Como coloco o Flecha Secreta na tela do celular?', '<div><b>iPhone:</b> abra <b>flechasecreta.github.io</b> no Safari, toque em Compartilhar (o quadrado com a seta para cima) e escolha <b>Adicionar à Tela de Início</b>.</div><div><b>Android:</b> abra o endereço no Chrome, toque nos três pontinhos (⋮) e escolha <b>Adicionar à tela inicial</b> ou <b>Instalar app</b>.</div><div class="muted" style="font-size:13px">Abrindo pelo ícone, você não precisa digitar a senha toda vez.</div>')+
-    faq('Os administradores sabem quem eu tirei?', '<div>Não. Ninguém vê quem tirou quem, nem os administradores. A lista completa só fica disponível no dia seguinte à revelação, quando a brincadeira já acabou.</div>')+
-    faq('Mensagem anônima é anônima mesmo?', '<div>Sim. Quem recebe vê só “Remetente anônimo”, e ninguém, nem os administradores, consegue descobrir quem escreveu.</div>')+
-    faq('Não recebi o e-mail do sorteio.', '<div>Procure na caixa de Spam, Lixo eletrônico ou Promoções. De qualquer forma, seu amigo secreto também aparece aqui no aplicativo, na aba <b>Meu amigo</b>. Se precisar, peça aos administradores para reenviar o e-mail.</div>')+
-    faq('O que é o “círculo único”?', '<div>A tira B, B tira C, C tira D… e o último tira A. Na revelação, quem foi tirado é o próximo a revelar, e a roda só fecha na última pessoa. Se fechar antes, é sinal de que alguém trocou de amigo secreto, e o Auditor descobre! 😉</div>')+
-    faq('Posso trocar de amigo secreto?', '<div>Não. O sorteio é definitivo e qualquer troca desmancha o círculo, o que o Auditor percebe na revelação.</div>')+
-    faq('Mandei uma mensagem errada. Dá para corrigir?', '<div>Sim. Toque na mensagem (nas Conversas) ou em <b>Editar</b> (no Mural) para corrigir até 10 minutos depois de enviar. Depois disso, você ainda pode apagar, desde que ninguém tenha respondido a mensagem.</div>')+
-    faq('Mudei de e-mail.', '<div>No <b>Perfil</b>, toque em <b>Trocar meu e-mail</b>. Enviamos um link para o e-mail novo e a troca acontece quando você clicar nele. Senha, conversas e amigo secreto continuam iguais.</div>')+
-    faq('Como recebo avisos no celular?', '<div>Abra o Flecha Secreta pelo <b>ícone na tela de início</b>. No <b>Perfil</b>, em <b>Notificações no celular</b>, toque em <b>Ativar notificações</b>, depois em <b>Permitir notificações</b> e confirme a pergunta do celular. Pronto: os avisos chegam como os de qualquer aplicativo, e tocar neles abre o Flecha Secreta. No iPhone, é preciso o iOS 16.4 ou mais novo (iPhone 8 em diante, atualizado). Quem preferir pode usar o Telegram, na mesma seção. Os avisos de mensagem mostram as primeiras palavras do texto; para esconder, desmarque <b>Mostrar uma prévia das mensagens nos avisos</b>, na mesma seção. Os avisos nunca mostram o nome do seu amigo secreto e, com a proteção pela senha ligada, também não mostram o texto do que ele respondeu.</div>')+
-    faq('Ainda tenho dúvidas.', '<div>No <b>Perfil</b>, use <b>Fale com os administradores</b>: sua mensagem chega para quem organiza o grupo, e a resposta aparece ali mesmo.</div>')+
-  '</div></div>';
+      '<b>Notificações:</b> mande um aviso de teste para alguém e veja quais aparelhos dessa pessoa estão cadastrados.',
+      '<b>Desempenho:</b> o tempo de resposta de cada chamada do servidor.'
+    ]), ' class="papel-ajuda"') : ''));
+
+  /* 7. não resolveu? */
+  if(membro && !g.souAdmin) h+='<div class="aj-fim"><h2 style="font-size:19px;margin-top:8px">💬 Não resolveu? Fale com os administradores</h2><div class="cartao pilha" id="aj-recados">'+carregando()+'</div></div>';
+  else if(g.souAdmin && !g.souMestre) h+='<div class="aj-fim"><h2 style="font-size:19px;margin-top:8px">💬 Não resolveu?</h2><div class="cartao pilha"><div>Escreva para o administrador geral em <b>Admin → Mensagens → Falar com o administrador geral</b>.</div>'+ir('admin:mensagens','Abrir Admin → Mensagens')+'</div></div>';
+  h+='</div>';
   c.innerHTML=h;
+
+  $$('[data-ir]',c).forEach(function(b){ b.onclick=function(){ irPara(b.dataset.ir); }; });
+  var rc=$('#aj-recados',c); if(rc) chamar('recados',{grupoId:S.gid}).then(function(d){ if(document.body.contains(rc)) desenharRecados(rc, d); }).catch(function(){ var f=rc.closest('.aj-fim'); if(f) f.remove(); });
+  if(membro) desenharPassos($('#aj-passos',c));
+
+  /* busca: mostra só os assuntos com todas as palavras digitadas (sem diferenciar acentos) e já abre esses assuntos */
+  var busca=$('#aj-busca',c), itens=$$('.aj-sec details',c), abertos=itens.map(function(d){ return d.open; });
+  busca.addEventListener('input', function(){
+    var q=semAcento(busca.value).trim(), pal=q? q.split(/\s+/) : [], n=0;
+    var ps=$('#aj-passos',c); if(ps) ps.hidden=!!q;
+    itens.forEach(function(d, i){ var t=semAcento(d.textContent), ok=pal.every(function(w){ return t.indexOf(w)>=0; });
+      d.hidden=!ok; d.open= q? ok : abertos[i]; if(ok) n++; });
+    $$('.aj-sec',c).forEach(function(s){ s.hidden = !!q && !$$('details',s).some(function(d){ return !d.hidden; }); });
+    $('#aj-nada',c).hidden = !q || n>0;
+  });
+}
+/* "Seus primeiros passos": o que já está feito aparece marcado; o que falta tem o botão "Fazer agora" */
+function desenharPassos(box){
+  if(!box) return;
+  var eu=S.eu, g=S.g, celular=!!(window.matchMedia && matchMedia('(pointer:coarse)').matches);
+  var l=[
+    {id:'icone', t:'Flecha Secreta na tela de início', d:'Abre mais rápido e permite receber os avisos.', ok:null, ir:'icone'},
+    {id:'avisos', t:'Avisos no celular', d:'Para saber na hora quando chegar mensagem ou sair o sorteio.', ok:avisosAtivos(), ir:'perfil:avisos'},
+    {id:'foto', t:'Sua foto', d:'Ajuda a família a reconhecer você.', ok:!!eu.foto, ir:'perfil:eu'},
+    {id:'desejos', t:'O que eu gostaria de ganhar', d:'Suas sugestões de presente, que todos veem.', ok:!!(g.meusDesejos||'').trim(), ir:'amigo:des'},
+    {id:'presentes', t:'Perfil para presentes', d:'Medidas e gostos. Só quem tirou você vê.', ok:temPerfilPresente(eu.perfilPresente), ir:'perfil:presentes'}
+  ];
+  if(!celular) l.shift();
+  function desenhar(){
+    var feitos=l.filter(function(x){ return x.ok; }).length, falta=l.length-feitos;
+    box.innerHTML='<details id="aj-passos-d"'+(falta?' open':'')+'><summary>🚀 Seus primeiros passos <span class="muted" style="font-weight:400">· '+feitos+' de '+l.length+(falta?'':' — tudo pronto! 🎉')+'</span></summary>'+
+      '<div class="passos" style="padding-bottom:14px">'+l.map(function(x){
+        return '<div class="passo '+(x.ok?'ok':x.ok===null?'verif':'pend')+'" data-passo="'+x.id+'"><span class="pm">'+(x.ok?'✅':x.ok===null?'⏳':'⬜')+'</span><div class="pt"><b>'+esc(x.t)+'</b><div class="muted">'+(x.ok===null?'Verificando…':esc(x.d))+'</div></div>'+
+          (x.ok? '' : '<button type="button" class="btn peq" data-passo-ir="'+x.ir+'">'+(x.id==='icone'?'Como fazer':'Fazer agora')+'</button>')+'</div>'; }).join('')+'</div></details>';
+    $$('[data-passo-ir]',box).forEach(function(b){ b.onclick=function(){
+      if(b.dataset.passoIr==='icone'){ var d=$('#aj-icone'); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } return; }
+      irPara(b.dataset.passoIr); }; });
+  }
+  desenhar();
+  var ic=l[0].id==='icone'? l[0] : null;
+  if(ic){
+    var fim=false;
+    function concluir(st){ if(fim) return; fim=true;
+      if(st && st.noIcone){ ic.ok=true; } else if(st || !VIA_PORTAL){ ic.ok=false; } else { l.shift(); }
+      if(document.body.contains(box)) desenhar(); }
+    estadoPush().then(concluir); setTimeout(function(){ concluir(null); }, 8000);
+  }
 }
 
 /* ---------- aba: perfil ---------- */
@@ -4248,13 +4381,29 @@ function telaPerfil(c){
   var semGrupo=!c;
   if(semGrupo){ app.innerHTML='<header class="topo"><div class="wrap"><button class="icobtn" id="pf-v" aria-label="Voltar">'+I.voltar+'</button><div class="tit"><h1>Meu perfil</h1></div></div></header><main class="wrap" id="conteudo"></main>'; c=$('#conteudo'); $('#pf-v').onclick=telaGrupos; }
   var eu=S.eu, foto=eu.foto;
-  c.innerHTML='<div class="secao"><h2>Meu perfil</h2><div class="cartao pilha">'+
+  /* sub-abas (26/11/2026): Eu · Presentes · Avisos · Privacidade; a última aberta fica lembrada em S.subPerfil */
+  var subs=[{id:'eu',t:'👤 Eu'},{id:'presentes',t:'🎁 Presentes',ponto:!temPerfilPresente(eu.perfilPresente)},{id:'avisos',t:'🔔 Avisos',ponto:!avisosAtivos()},{id:'privacidade',t:'🔒 Privacidade'}];
+  var sub=subs.some(function(x){ return x.id===S.subPerfil; })? S.subPerfil : 'eu';
+  function bloco(id, html){ return '<div data-sub="'+id+'"'+(id===sub?'':' hidden')+'>'+html+'</div>'; }
+  c.innerHTML='<nav class="sub-abas" id="ad-nav" aria-label="Seções do perfil">'+subs.map(function(x){ return '<button type="button" data-sub-ir="'+x.id+'" aria-current="'+(x.id===sub)+'">'+x.t+(x.ponto?'<span class="ponto" title="Falta preencher"></span>':'')+'</button>'; }).join('')+'</nav>'+
+    '<div data-sub="eu"'+(sub==='eu'?'':' hidden')+'><div class="secao"><h2>Meu perfil</h2><div class="cartao pilha">'+
     '<div class="revelado"><span id="pf-av">'+avatar(foto,eu.nome,'g')+'</span><div class="pilha" style="gap:6px"><label class="btn sec peq" style="cursor:pointer">Escolher foto<input type="file" accept="image/*" id="pf-foto" hidden></label>'+(foto?'<button class="link" id="pf-sem">Remover foto</button>':'')+'<span class="muted" style="font-size:12.5px">A foto ajuda a família a identificar você.</span></div></div>'+
     '<div class="grade2"><label class="campo">Nome<input class="inp" id="pf-nome" value="'+esc(eu.nome)+'"></label>'+(eu.telefoneLiberado? '<label class="campo">Celular<input class="inp" id="pf-tel" inputmode="tel" maxlength="15" value="'+esc(eu.telefone||'')+'" placeholder="(99) 99999-9999"></label>' : (eu.telefone? '<div class="campo" style="font-size:13px;font-weight:600;color:var(--tinta-2)">Celular<div class="inp" style="color:var(--tinta-2)">'+esc(eu.telefone)+'</div></div>' : ''))+'</div>'+
     '<div class="muted" style="font-size:13px">O celular fica visível apenas para os administradores.</div>'+
     '<button class="btn" id="pf-ok">Salvar perfil</button></div></div>'+
-    secaoPerfilPresente(eu.perfilPresente || {})+
-    (S.g && S.g.souMembro && !S.g.suporte && !S.g.souAdmin && !semGrupo? '<div class="secao"><h2>Fale com os administradores</h2><div class="cartao pilha" id="pf-recados">'+carregando()+'</div></div>' : '')+
+    '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
+    '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s">'+campoUsuario(S.eu.email)+'<label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><div class="grade2"><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label><label class="campo">Repita a nova senha<input class="inp" type="password" id="pf-n2" autocomplete="new-password"></label></div><div class="muted" style="font-size:13px">Não lembra a senha atual? Saia da conta e, na tela de entrada, toque em <b>Esqueci minha senha</b>.</div><div class="faixa erro" id="pf-se" hidden></div><button class="btn sec">Trocar senha</button></form></div>'+
+    '<div class="secao"><button class="btn sec larga" id="pf-sair">Sair desta conta</button><div class="muted" style="font-size:12.5px;text-align:center">Flecha Secreta · o amigo secreto da sua turma</div></div></div>'+
+    bloco('presentes', secaoPerfilPresente(eu.perfilPresente || {}))+
+    bloco('avisos', '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
+      '<div class="secao"><details class="cartao dica-avisos" id="pf-dica-av"><summary><b>Ativei, mas os avisos não aparecem?</b></summary><div class="pilha" style="gap:8px;margin-top:10px;font-size:14px">'+
+        '<div>1. Toque em <b>Enviar teste</b>, logo acima. Se o teste chegar, está tudo certo.</div>'+
+        '<div>2. <b>iPhone com Foco</b> (Trabalho, Dormir, Não Perturbe…): o Foco segura os avisos. Vá em <b>Ajustes → Foco</b>, toque no Foco que você usa → <b>Apps</b> → <b>Adicionar</b> → <b>Flecha Secreta</b>. Repita em cada Foco.</div>'+
+        '<div>3. <b>iPhone com Resumo Agendado</b>: em <b>Ajustes → Notificações → Resumo Agendado</b>, deixe o Flecha Secreta fora do resumo.</div>'+
+        '<div>4. <b>Android</b>: em <b>Configurações → Apps</b>, abra o Chrome (ou o Flecha Secreta), confira se as <b>Notificações</b> estão ligadas e, em <b>Bateria</b>, escolha <b>Sem restrições</b>.</div>'+
+        '<div>5. Abra sempre o Flecha Secreta pelo <b>ícone na tela de início</b>, e não pelo navegador.</div></div></details></div>')+
+    '<div data-sub="privacidade"'+(sub==='privacidade'?'':' hidden')+'>'+
+    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou e a conversa <b>Meu amigo secreto</b> só aparecem depois da senha que você usa para entrar no app (a lista de conversas e os avisos também não mostram o que ele escreveu). Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
     (function(){ var g=S.g; if(!g || !g.souMembro || semGrupo) return '';
       var opE = g.compraAtiva && g.compraOptOut, opA = g.abracoAtivo && g.abracoOptOut; if(!opE && !opA) return '';
       var lin=function(id, marcado, txt, exp){ return '<label style="display:flex;gap:10px;align-items:flex-start;font-weight:600"><input type="checkbox" id="'+id+'" '+(marcado?'checked':'')+' style="width:20px;height:20px;flex:none;margin-top:2px"> '+txt+'</label><div class="muted" style="font-size:13px;margin-top:-4px">'+exp+'</div>'; };
@@ -4262,11 +4411,8 @@ function telaPerfil(c){
         (opE? lin('pf-semesc', g.semEscolha, 'Não quero ser escolhido(a) na compra de escolha', 'Na compra de escolha, alguém paga para escolher quem vai tirar. Se marcar, ninguém poderá escolher você; você continua no sorteio normal.') : '')+
         (opA? lin('pf-semab', g.semAbraco, 'Não quero ser incluído(a) em um Abraço Garantido', 'No Abraço Garantido, alguém paga para escolher quem vai tirar quem. Se marcar, ninguém poderá incluir você em um par.') : '')+
         '<div class="muted" style="font-size:12.5px">Só você vê '+(opE&&opA?'estas opções':'esta opção')+'. Ninguém fica sabendo quem marcou, e vale para os próximos pedidos.</div></div></div>'; })()+
-    '<div class="secao"><h2>E-mail de acesso</h2><div class="cartao pilha" id="pf-email"></div></div>'+
-    '<div class="secao"><h2>Notificações no celular</h2><div class="cartao pilha" id="pf-avisos"></div></div>'+
-    '<div class="secao"><h2>Proteger meu amigo secreto</h2><div class="cartao pilha"><label class="cp-liga"><input type="checkbox" id="pf-prot" '+(S.eu.protegeAmigo?'checked':'')+'> <span>Pedir minha senha para ver o amigo secreto</span></label><div class="muted" style="font-size:13px">Esta proteção já vem ligada para todos: o nome de quem você tirou e a conversa <b>Meu amigo secreto</b> só aparecem depois da senha que você usa para entrar no app (a lista de conversas e os avisos também não mostram o que ele escreveu). Assim, quem pegar o seu celular não descobre o seu amigo secreto. Para desligar, também é preciso a senha.</div></div></div>'+
-    '<div class="secao"><h2>Trocar senha</h2><form class="cartao pilha" id="pf-s">'+campoUsuario(S.eu.email)+'<label class="campo">Senha atual<input class="inp" type="password" id="pf-a" autocomplete="current-password"></label><div class="grade2"><label class="campo">Nova senha<input class="inp" type="password" id="pf-n" autocomplete="new-password"></label><label class="campo">Repita a nova senha<input class="inp" type="password" id="pf-n2" autocomplete="new-password"></label></div><div class="faixa erro" id="pf-se" hidden></div><button class="btn sec">Trocar senha</button></form></div>'+
-    '<div class="secao"><button class="btn sec larga" id="pf-sair">Sair desta conta</button><div class="muted" style="font-size:12.5px;text-align:center">Flecha Secreta · o amigo secreto da sua turma</div></div>';
+    '</div>';
+  ligarSubAbas(c, 'subPerfil');
   $('#pf-foto').onchange=function(){ var f=this.files[0]; lerImagem(f, 320, true).then(function(url){ foto=url; $('#pf-av').innerHTML=avatar(url,eu.nome,'g'); aviso('Foto pronta. Toque em Salvar perfil.'); }).catch(falha); };
   var sem=$('#pf-sem'); if(sem) sem.onclick=function(){ foto=''; $('#pf-av').innerHTML=avatar('',eu.nome,'g'); };
   var tel=$('#pf-tel'); if(tel) mascaraTelefone(tel);
@@ -4294,12 +4440,19 @@ function telaPerfil(c){
   if(pr) pr.onsubmit=function(ev){ ev.preventDefault();
     var d=lerPerfilPresente();
     $$('.grupo-p', pr).forEach(function(g){ g.open=false; });
-    ocupado(pr.querySelector('button'), function(){ return chamar('salvarPerfilPresente', d).then(function(eu2){ S.eu=eu2; aviso('Perfil para presentes salvo.'); }); }); };
+    ocupado(pr.querySelector('button'), function(){ return chamar('salvarPerfilPresente', d).then(function(eu2){ S.eu=eu2; aviso('Perfil para presentes salvo.'); atualizarPontosPerfil(); }); }); };
   function prefCompra(id, campo, msgSim, msgNao){ var el=$('#'+id); if(!el) return; el.onchange=function(){ var v=el.checked, d={grupoId:S.gid}; d[campo]=v;
     chamar('preferenciaAbraco', d).then(function(g2){ S.g=g2; aviso(v?msgSim:msgNao); }).catch(function(e){ el.checked=!v; falha(e); }); }; }
   prefCompra('pf-semab','sem','Pronto: você não será incluído(a) em um Abraço Garantido.','Pronto: você pode ser incluído(a) em um Abraço Garantido.');
   prefCompra('pf-semesc','semEscolha','Pronto: ninguém poderá escolher você na compra de escolha.','Pronto: você pode ser escolhido(a) na compra de escolha.');
-  var rc=$('#pf-recados'); if(rc) chamar('recados',{grupoId:S.gid}).then(function(d){ desenharRecados(rc, d); }).catch(function(){ rc.closest('.secao').remove(); });
+}
+function temPerfilPresente(p){ return !!p && Object.keys(p).some(function(k){ var v=p[k]; return Array.isArray(v)? v.length>0 : !!v; }); }
+function avisosAtivos(){ var eu=S.eu||{}; return !!(eu.push || eu.avisos==='ativo'); }
+/* bolinhas das sub-abas do Perfil: somem assim que a pessoa preenche ou ativa */
+function atualizarPontosPerfil(){
+  [['presentes', !temPerfilPresente(S.eu.perfilPresente)], ['avisos', !avisosAtivos()]].forEach(function(x){
+    var b=$('#ad-nav [data-sub-ir="'+x[0]+'"]'); if(!b) return; var pt=$('.ponto', b);
+    if(x[1] && !pt) b.insertAdjacentHTML('beforeend','<span class="ponto" title="Falta preencher"></span>'); else if(!x[1] && pt) pt.remove(); });
 }
 /* Participante -> administradores do grupo (não é o administrador geral) */
 function desenharRecados(box, d){
@@ -4338,6 +4491,7 @@ function desenharAvisos(box){
   box.innerHTML='<div class="pilha" id="av-push"></div><div class="pilha" id="av-tg"></div><div id="av-prev"></div>';
   desenharPush($('#av-push',box), $('#av-tg',box));
   desenharPrevia($('#av-prev',box));
+  atualizarPontosPerfil();
 }
 /* prévia das mensagens nos avisos: aparece quando a pessoa recebe avisos por algum canal */
 function desenharPrevia(box){
@@ -4461,6 +4615,7 @@ function desenharTelegram(box){
     $('#av-teste',box).onclick=function(){ ocupado(this, function(){ return chamar('testarAviso',{}).then(function(t){ aviso(t); }); }); };
   }
   $('#av-off',box).onclick=function(){ chamar('configurarAvisos',{ativar:false}).then(function(e2){ S.eu=e2; desenharTelegram(box); }).catch(falha); };
+  atualizarPontosPerfil();
 }
 
 /* ---------- aba: auditor ---------- */
@@ -4637,9 +4792,9 @@ function desenharRecadosAdmin(box, l){
   var pend=l.filter(function(x){ return x.pendente; }).length;
   var bn=$('#ad-nav-msg'); if(bn){ bn.hidden=!pend; bn.textContent=pend; }
   box.innerHTML= l.length? (pend? '<div class="faixa aviso-f" style="margin-bottom:10px"><div><b>'+pend+'</b> conversa(s) aguardando resposta.</div></div>':'')+'<div class="lista">'+l.map(function(x,i){ return '<button class="item" data-rc="'+i+'">'+avatar(x.foto,x.nome)+'<div class="txt"><div class="t1">'+esc(x.nome)+(x.pendente?' <span class="chip aviso">aguardando resposta</span>':'')+'</div><div class="t2">'+esc(x.ultima)+'</div></div><span class="hora">'+quando(x.em)+'</span></button>'; }).join('')+'</div>'
-    : '<div class="cartao muted">Nenhuma mensagem ainda. Os participantes podem escrever para a administração pela aba Perfil, em “Fale com os administradores”.</div>';
+    : '<div class="cartao muted">Nenhuma mensagem ainda. Os participantes podem escrever para a administração no fim da aba Ajuda, em “Fale com os administradores”.</div>';
   $$('[data-rc]',box).forEach(function(b){ b.onclick=function(){ var x=l[+b.dataset.rc];
-    modal('<div class="revelado">'+avatar(x.foto,x.nome)+'<div><h2>'+esc(x.nome)+'</h2><div class="muted" style="font-size:13px">Mensagens para a administração</div></div></div><div id="rp-fio" class="pilha" style="gap:10px"></div><div class="muted" style="font-size:12.5px">'+esc(x.nome)+' recebe a resposta por e-mail, nas notificações (se ativou) e no Perfil do aplicativo.</div><button class="btn sec" data-fechar>Fechar</button>', function(m){
+    modal('<div class="revelado">'+avatar(x.foto,x.nome)+'<div><h2>'+esc(x.nome)+'</h2><div class="muted" style="font-size:13px">Mensagens para a administração</div></div></div><div id="rp-fio" class="pilha" style="gap:10px"></div><div class="muted" style="font-size:12.5px">'+esc(x.nome)+' recebe a resposta por e-mail, nas notificações (se ativou) e no fim da aba Ajuda do aplicativo.</div><button class="btn sec" data-fechar>Fechar</button>', function(m){
       function achar(l2){ l=l2; desenharRecadosAdmin(box, l2); var y=l2.filter(function(k){ return k.email===x.email; })[0]; return y? y.itens : []; }
       fio($('#rp-fio',m), { itens:x.itens, placeholder:'Responder a '+x.nome+'…', rotulo:'Enviar resposta',
         rotuloAutor:function(k){ return k.minha?'Você':(k.de==='a'? k.autor+' (administração)' : k.autor); },
